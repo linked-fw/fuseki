@@ -21,7 +21,7 @@
     "build": "rimraf ./lib && yarn build-esm && yarn copy-to-lib",
     "build-esm": "echo \"compiling ESM\" && rimraf ./lib/esm && yarn tsc -p tsconfig-esm.json",
     "copy-to-lib": "echo 'copying CSS + JSON assets to lib folder' && yarn copyfiles -u 1 'src/**/*.css' 'src/**/*.json' lib/esm",
-    "test": "echo 'no tests yet'",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.cjs --passWithNoTests",
     "test-debug": "env-cmd -e development yarn jest --passWithNoTests"
   },
   "keywords": [

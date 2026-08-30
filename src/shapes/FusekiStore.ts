@@ -38,6 +38,33 @@ export interface FusekiStoreConfig {
   defaultGraph?: string;
 }
 
+/**
+ * A Fuseki request that did not succeed.
+ *
+ * Carries the endpoint, HTTP status and response body, because the useful part of a Fuseki
+ * failure is usually its body — a SPARQL parse error names the line and column, and an HTML
+ * page means the dataset does not exist.
+ */
+export class FusekiQueryError extends Error {
+  readonly endpoint: string;
+  readonly status: number;
+  readonly body: string;
+  readonly sparql: string;
+
+  constructor(
+    message: string,
+    details: { endpoint: string; status: number; body: string; sparql: string },
+  ) {
+    const snippet = details.body.trim().slice(0, 300);
+    super(`${message}\n  endpoint: ${details.endpoint}${snippet ? `\n  response: ${snippet}` : ''}`);
+    this.name = 'FusekiQueryError';
+    this.endpoint = details.endpoint;
+    this.status = details.status;
+    this.body = details.body;
+    this.sparql = details.sparql;
+  }
+}
+
 @linkedShape
 export class FusekiStore extends SparqlDataset {
   static targetClass = fuseki.FusekiStore;
@@ -153,16 +180,29 @@ export class FusekiStore extends SparqlDataset {
     });
     const text = await res.text();
 
+    // A failed query must FAIL. This previously returned an empty result set on any
+    // non-JSON response, with the comment "so callers don't crash" — which meant a 404, a
+    // 500, an HTML error page and a malformed query were all indistinguishable from "no
+    // rows". Every read through this store answered "nothing found" when the store was
+    // broken, and no caller could tell.
+    //
+    // That is not a hypothetical: Create Now's existence check reported `false`
+    // unconditionally in a running backend, so every re-save took the create branch. Two
+    // layers above this were hardened to stop swallowing before anyone looked here.
+    if (!res.ok) {
+      throw new FusekiQueryError(
+        `SPARQL query failed: ${res.status} ${res.statusText}`,
+        { endpoint, status: res.status, body: text, sparql },
+      );
+    }
+
     try {
       return JSON.parse(text) as SparqlJsonResults;
     } catch {
-      console.warn('Fuseki did not return valid JSON');
-      console.warn(
-        'Response text:',
-        text.substring(0, 500) + (text.length > 500 ? '...' : '')
+      throw new FusekiQueryError(
+        'SPARQL query returned a 2xx response that is not valid JSON',
+        { endpoint, status: res.status, body: text, sparql },
       );
-      // Return empty result set so callers don't crash
-      return { head: { vars: [] }, results: { bindings: [] } };
     }
   }
 
@@ -184,9 +224,14 @@ export class FusekiStore extends SparqlDataset {
       body: sparql,
     });
 
+    // Same rule as the query path, and the stakes are higher: a swallowed WRITE reports
+    // success for data that was never stored.
     if (!res.ok) {
       const text = await res.text();
-      console.warn('Fuseki update failed:', text || res.statusText);
+      throw new FusekiQueryError(
+        `SPARQL update failed: ${res.status} ${res.statusText}`,
+        { endpoint, status: res.status, body: text, sparql },
+      );
     }
   }
 
