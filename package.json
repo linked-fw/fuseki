@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/linked-cm/fuseki.git"
   },
   "version": "3.0.0",
   "linkedPackage": true,
