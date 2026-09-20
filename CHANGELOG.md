@@ -1,5 +1,11 @@
 # @\_linked/fuseki
 
+## 3.0.1
+
+### Patch Changes
+
+- [#21](https://github.com/linked-fw/fuseki/pull/21) [`a765d0d`](https://github.com/linked-fw/fuseki/commit/a765d0d300c4b2272360e5489d4fd6e36ab33a34) Thanks [@flyon](https://github.com/flyon)! - Declare npm as the package manager for this repo, convert the build scripts off `yarn`, and mark `package-lock.json` as a generated file.
+
 ## 3.0.0
 
 ### Major Changes
