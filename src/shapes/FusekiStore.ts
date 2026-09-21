@@ -2,8 +2,6 @@ import { SparqlDataset } from '@_linked/core/sparql/SparqlDataset';
 import type { SparqlJsonResults } from '@_linked/core/sparql/resultMapping';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { linkedShape } from '../package.js';
-import { fuseki } from '../ontologies/fuseki.js';
 import {
   buildAuthHeaders,
   createDataset as createDatasetUtil,
@@ -65,29 +63,23 @@ export class FusekiQueryError extends Error {
   }
 }
 
-@linkedShape
 export class FusekiStore extends SparqlDataset {
-  static targetClass = fuseki.FusekiStore;
   private baseUrl: string;
   private dataset: string;
   private defaultGraph?: string;
   private credentials?: { username: string; password: string };
 
-  // The union with `string | {id?: string}` (Shape's base constructor signature)
-  // keeps the @linkedShape decorator happy. At runtime we only accept the
-  // config-object form per docs/backlog/016-ejection-export-flow.md.
-  constructor(config?: FusekiStoreConfig | string | { id?: string }) {
+  // Only the config-object form is accepted, per
+  // docs/backlog/016-ejection-export-flow.md. The parameter used to be widened
+  // with `string | {id?: string}` -- Shape's base constructor signature -- purely
+  // to satisfy the @linkedShape decorator, which this class no longer carries.
+  constructor(config?: FusekiStoreConfig) {
     super();
-    if (
-      !config ||
-      typeof config === 'string' ||
-      !(config as FusekiStoreConfig).endpoint
-    ) {
+    if (!config || typeof config === 'string' || !config.endpoint) {
       throw new Error(
         'FusekiStore: pass a FusekiStoreConfig object with at least { endpoint: "http://host:port/dataset" }.',
       );
     }
-    config = config as FusekiStoreConfig;
     const url = new URL(config.endpoint);
     this.baseUrl = `${url.protocol}//${url.host}`;
     this.dataset = FusekiStore.normalizeDatasetName(url.pathname);
