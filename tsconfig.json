@@ -9,8 +9,25 @@
     "esModuleInterop": true,
     "pretty": true,
     "jsx": "react",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "files": ["./src/types.ts", "./src/index.ts"],
-  "include": ["./src/backend.ts", "./src/tests/*", "../node_modules/ts-jest/globals.d.ts"]
+  "files": [
+    "./src/types.ts",
+    "./src/index.ts"
+  ],
+  "include": [
+    "./src/backend.ts",
+    "./src/tests/*",
+    "../node_modules/ts-jest/globals.d.ts",
+    "./src/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "./src/__tests__/**",
+    "./src/tests/**",
+    "./src/test-helpers/**"
+  ]
 }
