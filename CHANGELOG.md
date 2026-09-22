@@ -1,5 +1,19 @@
 # @\_linked/fuseki
 
+## 3.1.2
+
+### Patch Changes
+
+- [#27](https://github.com/linked-fw/fuseki/pull/27) [`21dfea5`](https://github.com/linked-fw/fuseki/commit/21dfea574249e4f4a9569ddb3c837dfa1787e37f) Thanks [@flyon](https://github.com/flyon)! - Compile the whole `src` folder, and let a bare import resolve under Node10.
+
+  The build only emitted what an entry transitively reached, so any module
+  nothing imported was never built — and never type-checked, so it rotted
+  quietly. `include` now covers `src/**/*` with tests excluded explicitly.
+
+  `typesVersions` maps every specifier through `lib/esm/*`, so a `types` value
+  that already carried that prefix had it applied twice and no consumer on
+  classic Node10 resolution could `import` the package by its bare name.
+
 ## 3.1.1
 
 ### Patch Changes
