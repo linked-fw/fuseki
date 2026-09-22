@@ -39,5 +39,5 @@ linkedOntology(
   ns,
   'lincd-fuseki',
   loadData,
-  '../data/lincd-fuseki.json'
+  '../data/fuseki.json'
 );
