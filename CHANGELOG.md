@@ -1,5 +1,20 @@
 # @\_linked/fuseki
 
+## 3.1.3
+
+### Patch Changes
+
+- [#29](https://github.com/linked-fw/fuseki/pull/29) [`50180c8`](https://github.com/linked-fw/fuseki/commit/50180c82dc8797231b744323ea5549370a18b3dd) Thanks [@flyon](https://github.com/flyon)! - The ontology no longer registers by importing itself.
+
+  It carried `import * as _this from './<prefix>.js'` and passed that namespace to
+  `linkedOntology()`. Under `tsc` the self-reference survives; under a bundler it does
+  not — Rollup treats it as a circular import and elides it, so the binding is
+  `undefined` and a consuming app dies at boot with `_this is not defined`.
+
+  Registration now lives in a `<prefix>.register.ts` sibling, imported from the package
+  entry. Nothing changes for consumers: importing this package still registers the
+  ontology.
+
 ## 3.1.2
 
 ### Patch Changes
