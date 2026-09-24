@@ -1,5 +1,5 @@
 import './types.js';
-import './ontologies/fuseki.js';
+import './ontologies/fuseki.register.js';
 
 //SHAPES FIRST
 // import './shapes/YourShape';
