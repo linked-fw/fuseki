@@ -12,3 +12,5 @@ src/**/*.js.map
 
 # Compiled .js belongs in lib/, never src/ (tsx-without-build artifacts).
 src/**/*.js
+
+server/target/
