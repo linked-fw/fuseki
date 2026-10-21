@@ -45,10 +45,17 @@ measurements; the master edits them here before C1 and K1's store phase start.
   :tdb a tdb2:DatasetTDB2 ; tdb2:location "/fuseki-base/databases/<name>" .
   ```
   It infers over every graph; its hierarchy is the closure of the stored `rdfs:subClassOf`
-  triples in the default graph. A commit that adds or removes one marks the hierarchy stale and
-  bumps a generation counter; the first transaction to begin afterwards rebuilds it once (other
-  starting readers wait), and each transaction keeps the hierarchy it began with. A burst of sync
-  commits costs one rebuild; a writer sees its own `subClassOf` change from its next transaction.
+  triples in the default graph. A commit that adds or removes one marks the hierarchy stale; the
+  first transaction that reads afterwards rebuilds it once, inside that transaction (other readers
+  wait for it), and each transaction keeps the hierarchy it first read with until it ends.
+  Write-only transactions never rebuild, so a burst of sync commits costs one rebuild, at the next
+  read. A transaction never reads with a hierarchy older than its snapshot (one that waited for
+  the writer lock or began during a commit builds its own); it may read with a newer one when
+  another transaction rebuilt after it began. A writer sees its own `subClassOf` change from its
+  next transaction (within the same transaction only when the shared hierarchy was already stale
+  at its first read). Opening a dataset (start, restart) builds its hierarchy once. Only writes
+  through the dataset mark the hierarchy: a second service or assembler over the same TDB2
+  location does not.
 - The image keeps the base image's `ds` dataset and its `shacl` endpoint under
   `ENABLE_SHACL=true`, as `lf:DatasetRDFSLive` over TDB2 at `/fuseki-base/databases/ds` (the base
   image's `ds` is TDB1 with a union default graph; its Lucene index and `ENABLE_*` handling are
@@ -64,13 +71,20 @@ measurements; the master edits them here before C1 and K1's store phase start.
 - `/<ds>/stored`: one module operation (`lf:stored`) over the stored triples only (every graph),
   run by TDB2's own query engine: a SPARQL query or a GSP read, chosen from the request; writes
   answer 405.
-- **Backups and copies stream `GET /<ds>/stored` as N-Quads.** `POST $/backup` and `GET /<ds>`
-  dump the service's dataset, inferred triples included, so they are never used for these
-  datasets.
-- `DELETE $/datasets/<ds>` removes the TDB2 files too (a module filter finishes what Fuseki skips
-  for a wrapped dataset); a re-created name starts empty.
+- **Backups and copies stream `GET /<ds>/stored` as N-Quads.** `POST $/backup`, `GET /<ds>` and
+  `GET /<ds>/data` read the service's dataset, inferred triples included, so they are never used
+  for these datasets. `$/compact` works as on plain TDB2.
+- `DELETE $/datasets/<ds>` removes the TDB2 files of a dataset created through the admin API (its
+  own `configuration/<ds>.ttl`) under `/fuseki-base/databases/` (a module filter finishes what
+  Fuseki skips for a wrapped dataset); a re-created name starts empty. Datasets declared in a
+  shared configuration file (`ds`, cn-main, cn-ai, pg-test) are only unregistered and keep their
+  files, as on plain Fuseki.
+- `/<ds>/upload` is not served on Fuseki 6.2 (405, the stock image too: Fuseki 6's upload handler
+  belongs to its UI module); load files through `/<ds>/data` (GSP) or N-Quads to `/<ds>`.
 - `arq:httpServiceAllowed=false` set by the module for every dataset.
-- *pending F1:* whether `text:TextDataset` (pg-test) works over `lf:DatasetRDFSLive`.
+- `text:TextDataset` works over `lf:DatasetRDFSLive` (`text:dataset` → the live type → TDB2), as
+  pg-test declares it: `text:query` finds subclass instances, which also answer superclass
+  patterns; `/stored` unwraps through it (settled by F1, fuseki report 001).
 
 ### `@_linked/fuseki` (provider F1; consumers C1, W1, W2, T1)
 
@@ -538,7 +552,7 @@ contract text.
 - [x] F1 — Phase 1: the module and its JUnit tests
 - [x] F1 — Phase 2: image, workflows, measurements M1-M13 (report 001 drafted)
 - [x] F1 — Phase 3: helpers, README, changeset, report 001
-- [ ] F1 — independent review (sensitive step), no open medium or high finding
+- [x] F1 — independent review (sensitive step), no open medium or high finding (third round)
 - [ ] F1 — landed on `store-inference` (commit) and pushed; contract changes handed to the master
 
 ## Outcome (F1)
@@ -549,10 +563,15 @@ gate with timings, the independent review).
 - **Changed:** `server/` (module, 38 JUnit tests, image, smoke, probe rig, benchmark),
   `.github/workflows/server.yml` and `image.yml`, `storedEndpoint` with tests, README, the
   `lincd-fuseki.README.md` pointer, a minor changeset.
-- **Verification:** `mvn -B -f server verify` 38 tests BUILD SUCCESS (14.9 s); `docker build`;
-  `smoke.sh` 16 ok (3.8 s); `npx linked build && npm test` 12 tests (6.4 s); `npm pack --dry-run |
-  grep -c server/` 0; `probe.sh` M1-M13 (3:26). Output quoted in report 001.
-- **Settled pending item:** `text:TextDataset` works over `lf:DatasetRDFSLive` (M5, M12).
+- **Verification (after the review fixes):** `mvn -B -f server verify` 43 tests BUILD SUCCESS
+  (20.9 s); `docker build`; `smoke.sh` 17 ok (5.1 s); `npx linked build && npm test` 12 tests
+  (7.1 s); `npm pack --dry-run | grep -c server/` 0; `probe.sh` M1-M13 (4:22). Output quoted in
+  report 001.
+- **Review:** three rounds; round 1 had 2 high and 1 medium finding, round 2 one new medium, all
+  fixed; round 3: "No open medium or high findings" (report 001 §Independent review).
+- **Settled pending item:** `text:TextDataset` works over `lf:DatasetRDFSLive` (M5, M12). The
+  contract copy above carries the settled text (first-read rebuild, delete limited to datasets
+  created through the admin API, `/upload` 405, the text index), as in the master plan.
 - **Contract changes proposed** (report 001 §Settled contract items): the rebuild happens at a
   transaction's first read, not at its begin (so write-only bursts cost one rebuild; M9: 800
   commits, 0 rebuilds, 1 at the next read in 18 ms); the hierarchy is built when a dataset opens;

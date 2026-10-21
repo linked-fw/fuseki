@@ -206,4 +206,7 @@ smoke-tests on every push that touches `server/`. The npm package (changesets, `
 does not include `server/`.
 
 The first publish creates the GHCR package private: set it to **public** once (package settings →
-visibility) and link it to this repository if the label did not.
+visibility) and link it to this repository if the label did not. Keep it linked to
+`linked-fw/fuseki` with Actions access: the workflow reads existing tags through the Packages API,
+which answers 404 both for a missing package and for one the workflow may not see, and a 404 reads
+as "not published yet".

@@ -70,8 +70,8 @@ image's service lines byte for byte, plus `stored`; `text:TextDataset` → `lf:D
 TDB2 at `/fuseki-base/databases/ds`). `server/IMAGE_TAG` `6.2.0-1` equals the pom version.
 `server/scripts/smoke.sh` (18 checks, ~4 s). Workflows: `server.yml` (on push touching `server/`:
 version check, `mvn verify`, image build, smoke; not a required check) and `image.yml` (on `main`
-touching `server/`, or dispatch: logs in, skips an existing tag and fails on any other inspect
-error, verifies, builds amd64 and smokes, then
+touching `server/`, or dispatch: reads the existing tags through the Packages API (404: not
+published yet; any other error stops the job) and skips an existing tag, verifies, builds amd64 and smokes, then
 pushes amd64+arm64 to `ghcr.io/linked-fw/fuseki:<IMAGE_TAG>`).
 
 **The measurement rig** (`server/probe/`: `compose.yml`, `probe.sh`, `text.ttl`, `plain.ttl`)
@@ -282,23 +282,23 @@ Every *pending F1* item and the measured additions. Text to replace or add in CN
 
 ## Verify and gates
 
-Full gate before landing (2026-10-21), output as printed:
+Full gate before landing, after the review fixes (2026-10-21), output as printed:
 
 ```
 $ mvn -B -f server verify
-[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.117 s -- in cm.linked.fuseki.AdminTemplateTest
-[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.483 s -- in cm.linked.fuseki.FusekiStoredTest
-[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.909 s -- in cm.linked.fuseki.DatasetGraphRDFSLiveTest
-[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.064 s -- in cm.linked.fuseki.TemplateGuardTest
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.640 s -- in cm.linked.fuseki.AssemblerTest
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.073 s -- in cm.linked.fuseki.fuseki.DropDatabaseFilterTest
-[INFO] Tests run: 38, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.452 s -- in cm.linked.fuseki.AdminTemplateTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.708 s -- in cm.linked.fuseki.FusekiStoredTest
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.442 s -- in cm.linked.fuseki.DatasetGraphRDFSLiveTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.085 s -- in cm.linked.fuseki.TemplateGuardTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.173 s -- in cm.linked.fuseki.AssemblerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.781 s -- in cm.linked.fuseki.fuseki.DropDatabaseFilterTest
+[INFO] Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
-[INFO] Total time:  13.718 s
-( mvn -B -f server verify 2>&1 | grep -E 'Tests run:|BUILD|Total time'; )  19.98s user 1.79s system 146% cpu 14.893 total
+[INFO] Total time:  18.880 s
+( mvn -B -f server verify 2>&1 | grep -E 'Tests run:|BUILD|Total time'; )  22.26s user 2.15s system 116% cpu 20.897 total
 $ docker build -t linked-fuseki:dev server
-sha256:7727cb23fd20685cb1106e5e47e84bc9624b9ce3c7085e276f9979f52c6af68d
-( docker build -q -t linked-fuseki:dev server; )  0.16s user 0.22s system 13% cpu 2.753 total
+sha256:e7caffc3922fb90586cbb1749698864d7b6ed7edb5b74ab74bba90fd0fa1d1e6
+( docker build -q -t linked-fuseki:dev server; )  0.17s user 0.27s system 13% cpu 3.183 total
 $ server/scripts/smoke.sh linked-fuseki:dev
 ok   server up
 ok   POST $/datasets dbType=tdb2 (200)
@@ -312,17 +312,18 @@ ok   the POST changed the hierarchy (true)
 ok   SERVICE refused (422)
 ok   ds infers (true)
 ok   ds /stored stored-only (false)
+ok   ds data read-write (ENABLE_DATA_WRITE) (200)
 ok   ds text index (true)
 ok   ds shacl: a shape on the superclass reports the subclass instance
 ok   DELETE $/datasets/smoke (200)
 ok   database directory removed
-smoke: 4 s
-server/scripts/smoke.sh linked-fuseki:dev  0.14s user 0.18s system 8% cpu 3.845 total
+smoke: 5 s
+server/scripts/smoke.sh linked-fuseki:dev  0.15s user 0.20s system 6% cpu 5.104 total
 $ npx linked build && npm test
 ✔ Build successful
 Test Suites: 3 passed, 3 total
 Tests:       12 passed, 12 total
-( npx linked build 2>&1 | tail -1 && npm test 2>&1 | grep -E 'Tests:|Suites:')  12.91s user 1.50s system 224% cpu 6.411 total
+( npx linked build 2>&1 | tail -1 && npm test 2>&1 | grep -E 'Tests:|Suites:')  13.86s user 1.79s system 219% cpu 7.122 total
 $ npm pack --dry-run 2>&1 | grep -c 'server/'
 0
 ```
@@ -374,4 +375,31 @@ the same plus `docker build` (1:45 cold) and `smoke.sh` (16 ok, 4 s).
 
 ## Independent review
 
-(Recorded at landing.)
+An independent read-only reviewer (opus) reviewed the diff against plan 070 §F1, §Contracts and
+sub-plan 001, then each round of fixes.
+
+- **Round 1** (`13b9cb4..25715a5`): "Verdict: 3 open medium/high findings (2 high, 1 medium)."
+  - High: a writer that waited for TDB2's writer lock read with the hierarchy from before the
+    commit it waited for (reproduced). Fixed with the two counters (Deviations), plus a test that
+    fails without the fix.
+  - High: the delete filter removed the files of unmanaged datasets (`ds`, and cn-main, cn-ai,
+    pg-test once in `assembler.ttl`). Fixed: managed datasets only, re-checked under the server
+    lock; test `anUnmanagedDatasetKeepsItsFiles`.
+  - Medium: `image.yml` could overwrite a published tag (an unauthenticated inspect failure read
+    as "absent"). Fixed.
+  - Lows: `TemplateGuard` fallback and no abort; `ENABLE_DATA_WRITE` smoke check; nits. The rest
+    are documented in the README: a newer hierarchy than the snapshot; a writer seeing its own
+    change; writes that bypass the dataset; Lucene committed after TDB2; `LOAD <url>`; `/stored`
+    below access control.
+- **Round 2** (`25715a5..324f3ca`): findings 1, 2 and 6 confirmed fixed ("blocked writer sees
+  stored A<=B: true; infers x a B: true"). New medium: the tag check's absent patterns did not
+  match what the registry says. Measured: GHCR answers `denied` for a missing package and tag.
+  Fixed (c422a41): existence comes from the Packages API (404 = absent).
+- **Round 3** (c422a41): "Verdict: No open medium or high findings." One low remains: the API
+  also answers 404 for a package the token may not see. The README's "Releasing the image" says to
+  keep the package linked with Actions access.
+- **Open lows, accepted:**
+  - If Fuseki's `dataService.shutdown()` throws after the configuration is removed, the filter may
+    delete the files of a store that is still open (rare).
+  - Without `FUSEKI_BASE`, on the first start of a new `run/`, the template is not guarded (the
+    image always sets `FUSEKI_BASE`).
