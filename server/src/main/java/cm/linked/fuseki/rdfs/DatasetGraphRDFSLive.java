@@ -6,6 +6,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.jena.graph.Graph;
 import org.apache.jena.query.ReadWrite;
 import org.apache.jena.query.TxnType;
+import org.apache.jena.sparql.core.Transactional.Promote;
 import org.apache.jena.rdfs.DatasetGraphRDFS;
 import org.apache.jena.riot.system.PrefixMap;
 import org.apache.jena.rdfs.SetupRDFS;
@@ -28,8 +29,9 @@ import org.slf4j.LoggerFactory;
  * generation. The first transaction that reads afterwards rebuilds the view once, inside itself
  * (so the rebuild reads exactly what that transaction sees); others reading meanwhile wait for
  * it. Writes do not need the view, so a burst of write-only commits costs one rebuild, at the
- * next read. A transaction keeps the view it first read with until it ends; a writer sees its own
- * {@code subClassOf} changes from its next transaction on.
+ * next read. A transaction never reads with a hierarchy older than its snapshot (one that waited
+ * for the writer lock, or began during a commit, builds its own view); it keeps the view it first
+ * read with until it ends.
  */
 public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements DatasetGraphWrapperView {
     private static final Logger LOG = LoggerFactory.getLogger("cm.linked.fuseki");
@@ -37,17 +39,26 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
     /** A view and the generation of the stored hierarchy it reflects (at least). */
     private record View(DatasetGraphRDFS dsg, long generation, long subClassOf) {}
 
-    /** Per-thread transaction state: the generation read before begin, and the view once resolved. */
+    /**
+     * Per-thread transaction state. {@code completed}: the generation read before begin (every
+     * commit it counts finished before this transaction began, so the transaction sees it).
+     * {@code started}: the commits that had begun committing when begin returned (a commit still
+     * in flight may or may not be in this transaction's snapshot). The view once resolved.
+     */
     private static final class TxnState {
-        final long generation;
+        final long completed;
+        long started;
         View view;
-        TxnState(long generation) { this.generation = generation; }
+        TxnState(long completed, long started) { this.completed = completed; this.started = started; }
     }
 
     private final DatasetGraph stored;
     private final SubClassOfTracker tracker;
     private final String label;
+    /** Hierarchy commits finished (bumped after TDB2's commit returns). */
     private final AtomicLong generation = new AtomicLong(0);
+    /** Hierarchy commits started (bumped before TDB2's commit). Never behind {@code generation}. */
+    private final AtomicLong pending = new AtomicLong(0);
     private final ReentrantLock rebuildLock = new ReentrantLock();
     private final ThreadLocal<TxnState> txn = new ThreadLocal<>();
     private volatile View current;
@@ -120,34 +131,37 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
             // Outside a transaction (configuration, toString): the latest view.
             return current;
         if ( state.view == null )
-            state.view = resolve(state.generation);
+            state.view = resolve(state);
         return state.view;
     }
 
     /**
-     * The view for a transaction that began after reading generation {@code gen}: every commit
-     * counted in {@code gen} finished before the transaction began, so the transaction sees them
-     * all and a view built inside it may carry that label.
+     * The view for this transaction. The shared view serves when it reflects every hierarchy
+     * commit that had started when the transaction began ({@code started}); a transaction that
+     * waited for TDB2's writer lock, or began while a commit was in flight, otherwise builds from
+     * its own snapshot. A view built here is published, labelled {@code completed} (commits this
+     * transaction certainly sees), unless this transaction wrote to the hierarchy itself: its
+     * triples are uncommitted, so that view is used by it alone.
      */
-    private View resolve(long gen) {
+    private View resolve(TxnState state) {
         View v = current;
-        if ( v.generation() >= gen )
+        if ( v.generation() >= state.started )
             return v;
-        // A write transaction that already changed the hierarchy would build from its own
-        // uncommitted triples: such a view is used by it alone and never published.
         if ( tracker.isTouched() )
             return build(v.generation());
         rebuildLock.lock();
         try {
             v = current;
-            if ( v.generation() < gen ) {
-                v = build(gen);
-                current = v;
+            if ( v.generation() >= state.started )
+                return v;
+            View built = build(state.completed);
+            if ( built.generation() > v.generation() ) {
+                current = built;
                 rebuilds.incrementAndGet();
                 LOG.info("[linked-fuseki] {}: hierarchy rebuilt ({} subClassOf, {} ms, generation {})",
-                         label, v.subClassOf(), lastRebuildMillis, gen);
+                         label, built.subClassOf(), lastRebuildMillis, built.generation());
             }
-            return v;
+            return built;
         } finally {
             rebuildLock.unlock();
         }
@@ -175,31 +189,60 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
 
     @Override
     public void begin() {
-        long gen = generation.get();
+        long completed = generation.get();
         stored.begin();
-        txn.set(new TxnState(gen));
+        txn.set(new TxnState(completed, pending.get()));
     }
 
     @Override
     public void begin(TxnType type) {
-        long gen = generation.get();
+        long completed = generation.get();
         stored.begin(type);
-        txn.set(new TxnState(gen));
+        txn.set(new TxnState(completed, pending.get()));
     }
 
     @Override
     public void begin(ReadWrite readWrite) {
-        long gen = generation.get();
+        long completed = generation.get();
         stored.begin(readWrite);
-        txn.set(new TxnState(gen));
+        txn.set(new TxnState(completed, pending.get()));
+    }
+
+    @Override
+    public boolean promote() {
+        return afterPromote(stored.promote());
+    }
+
+    @Override
+    public boolean promote(Promote type) {
+        return afterPromote(stored.promote(type));
+    }
+
+    // A promotion may move the transaction to newer data (read-committed promotion): resolve again.
+    private boolean afterPromote(boolean promoted) {
+        TxnState state = txn.get();
+        if ( promoted && state != null ) {
+            long started = pending.get();
+            if ( started != state.started ) {
+                state.started = started;
+                state.view = null;
+            }
+        }
+        return promoted;
     }
 
     @Override
     public void commit() {
         boolean touched = tracker.takeTouched();
-        stored.commit();
         if ( touched )
-            generation.incrementAndGet();
+            pending.incrementAndGet();
+        try {
+            stored.commit();
+        } finally {
+            // A failed commit only costs one rebuild at the next read.
+            if ( touched )
+                generation.incrementAndGet();
+        }
     }
 
     @Override

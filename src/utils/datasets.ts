@@ -245,7 +245,8 @@ export async function clearDatasets(
  * - `GET ?default` / `GET ?graph=<iri>`: one graph (Graph Store Protocol read);
  * - `GET ?query=…`, a `POST` with `Content-Type: application/sparql-query`, or a form `query=`:
  *   a SPARQL query over the stored triples (counts, fork copies).
- * Writes answer 405. On a dataset without inference it serves the dataset as it is.
+ * Writes answer 405. Only datasets that declare the `stored` endpoint have it (every dataset
+ * created through the image's admin form does); elsewhere the URL answers 404.
  */
 export function storedEndpoint(base: string, dataset: string): string {
   return `${base.replace(/\/+$/, '')}/${dataset}/stored`;

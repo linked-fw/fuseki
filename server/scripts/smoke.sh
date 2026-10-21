@@ -59,6 +59,9 @@ check "SERVICE refused" "$code" 422
 upd "$URL/ds/update" 'INSERT DATA { :A rdfs:subClassOf :B . :a a :A ; rdfs:label "smoke thing" }' >/dev/null
 check "ds infers" "$(ask "$URL/ds/sparql" 'ASK { :a a :B }')" true
 check "ds /stored stored-only" "$(ask "$URL/ds/stored" 'ASK { :a a :B }')" false
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/n-triples' \
+  --data-binary '<http://example.org/w> <http://example.org/p> "written" .' "$URL/ds/data?default")
+check "ds data read-write (ENABLE_DATA_WRITE)" "$code" 200
 check "ds text index" "$(ask "$URL/ds/sparql" 'PREFIX text: <http://jena.apache.org/text#> ASK { ?s text:query "smoke" . ?s a :B }')" true
 shape='@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix : <http://example.org/> .
 :S a sh:NodeShape ; sh:targetClass :B ; sh:property [ sh:path :required ; sh:minCount 1 ] .'

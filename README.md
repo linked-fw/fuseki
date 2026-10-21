@@ -77,9 +77,18 @@ infers RDFS classes: with `ex:A rdfs:subClassOf ex:B` stored, every `ex:A` insta
   afterwards rebuilds it once (readers starting meanwhile wait); write-only transactions never
   rebuild, so a burst of hundreds of ontology commits costs one rebuild (~20 ms for 800 classes,
   under 10 ms for schema.org's 952 axioms). A transaction keeps the hierarchy it first read with
-  until it ends, so one update request that inserts a `subClassOf` and then reads (for example
-  `DELETE WHERE { ?x a ex:Super }`) runs with the hierarchy from before its own insert; the
-  writer sees its change from its next transaction on.
+  until it ends, and never reads with one older than its own snapshot (a transaction that waited
+  for the writer lock, or began during another's commit, builds its own). It may read with a
+  newer one: when another transaction rebuilt after it began, an axiom deleted since is no longer
+  inferred while the deleted triple is still visible to it. A writer sees its own `subClassOf`
+  change from its next transaction; within the same transaction it usually reads with the
+  hierarchy from before its change (so one update request that inserts a `subClassOf` and then
+  runs `DELETE WHERE { ?x a ex:Super }` matches without it), and with its change included only
+  when the shared hierarchy was already stale at its first read.
+- **Every write goes through the dataset.** Only writes through the `lf:DatasetRDFSLive` dataset
+  (its service's endpoints) mark the hierarchy stale. A second service or assembler over the same
+  TDB2 location, or a tool writing to the database files while the server runs, changes the data
+  but not the hierarchy until the next hierarchy change through the dataset or a restart.
 - Opening a dataset (server start) builds its hierarchy once; the log says
   `[linked-fuseki] <location>: hierarchy built (<n> subClassOf, <ms> ms)`, and each rebuild
   `hierarchy rebuilt (…, generation <g>)`.
@@ -96,6 +105,9 @@ PREFIX lf:   <https://linked.cm/ont/fuseki#>
 ```
 
 A Lucene index wraps it as any dataset: `:text a text:TextDataset ; text:dataset :ds ; text:index …`.
+Over a wrapped dataset jena-text commits the Lucene index after TDB2's commit, not inside it (as
+over Jena's own `ja:DatasetRDFS`): a crash between the two can leave the index behind the data;
+rebuild it with `jena.textindexer` (`$TEXTINDEXER` in the image).
 
 **The template is kept in place.** Fuseki copies its stock templates into `/fuseki-base/templates`
 only when they are missing, so a run area persisted from an older image would create plain
@@ -145,14 +157,24 @@ the union graph is `<urn:x-arq:UnionGraph>`.
   triples included, and a restore of that dump would store them: never use it for an inferring
   dataset.
 - **`DELETE $/datasets/<ds>` removes the dataset's files** under `/fuseki-base/databases/<ds>`
-  (Fuseki skips that for a wrapped dataset; the module completes it, under Fuseki's own rule: that
-  directory only, never a symbolic link). A dataset re-created under the same name starts empty.
+  for a dataset created through the admin API (one with its own `configuration/<ds>.ttl`). Fuseki
+  skips that for a wrapped dataset; the module completes it under Fuseki's own rule: after a
+  successful delete only, that directory only, never a symbolic link. A dataset re-created under
+  the same name starts empty. A dataset declared in a shared configuration file (`ds`, or
+  datasets in your own `assembler.ttl`) is only unregistered and keeps its files, as on plain
+  Fuseki.
 - `POST $/compact/<ds>` works as on plain TDB2.
 
 ## SERVICE is off
 
 The module sets `arq:httpServiceAllowed false` for the whole server: a query with
 `SERVICE <url>` answers 422. Do not set `arq:httpServiceAllowed true` in a dataset's `ja:context`.
+SPARQL Update's `LOAD <url>` still fetches `http:` and `file:` IRIs: keep update endpoints behind
+authentication or off the public network.
+
+`/stored` reads below every wrapper of the live dataset. Do not put an access-control dataset
+(jena-fuseki-access) above an inferring dataset whose service also has `stored`: `/stored` would
+bypass it.
 
 ## Fuseki 6.2 notes
 

@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Apache Jena Fuseki 6.2.0 whose TDB2 datasets infer RDFS classes, with stored-only reads.
-FROM maven:3.9-eclipse-temurin-21 AS build
+# The jar is platform-independent: build it once, natively, for every target platform.
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline
@@ -9,6 +10,7 @@ COPY templates ./templates
 # Tests run in CI (mvn verify) before any image is built or published.
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q package -DskipTests
 
+# A multi-arch index digest (linux/amd64, linux/arm64).
 FROM secoresearch/fuseki:6.2.0@sha256:74833bbf3967f41f5f98ddd6b861abf1a426705056da3bbdb516b8a703342aa9
 USER root
 COPY --from=build /src/target/linked-fuseki-module.jar /javalibs/linked-fuseki-module.jar

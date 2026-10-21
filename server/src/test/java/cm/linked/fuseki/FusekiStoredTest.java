@@ -146,5 +146,5 @@ class FusekiStoredTest {
         assertEquals(2, send("POST", base, "application/n-quads", null, q).status() / 100);
         assertTrue(ask(base + "/sparql", "ASK { :x a :b }"));
     }
-    // Upload (an image-only endpoint: the UI module registers it) is covered by scripts/smoke.sh.
+    // Upload is not tested: Fuseki 6.2 serves no upload handler without its UI module (report 001).
 }

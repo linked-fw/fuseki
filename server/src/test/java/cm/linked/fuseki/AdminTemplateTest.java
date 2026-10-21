@@ -14,6 +14,9 @@ import java.nio.file.Path;
 import org.apache.jena.fuseki.main.FusekiServer;
 import org.apache.jena.fuseki.main.sys.FusekiModules;
 import org.apache.jena.fuseki.mod.admin.FMod_Admin;
+import org.apache.jena.dboe.base.file.Location;
+import org.apache.jena.sparql.core.DatasetGraph;
+import org.apache.jena.tdb2.DatabaseMgr;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import cm.linked.fuseki.Http.Resp;
 import cm.linked.fuseki.fuseki.FMod_LinkedFuseki;
 import cm.linked.fuseki.fuseki.TemplateGuard;
+import cm.linked.fuseki.rdfs.DatasetGraphRDFSLive;
 
 /**
  * A server with a run area and the admin module, whose stock template is in place before start:
@@ -31,6 +35,7 @@ class AdminTemplateTest {
     static FusekiServer server;
     static String root;
     static Path base;
+    static DatasetGraph staticDsg;
 
     @BeforeAll
     static void start() throws Exception {
@@ -40,7 +45,11 @@ class AdminTemplateTest {
             Files.write(base.resolve("templates/config-tdb2"), in.readAllBytes());
         }
         System.setProperty("FUSEKI_BASE", base.toString());
+        // An unmanaged dataset (no configuration file of its own) under databases/: kept on delete.
+        staticDsg = new DatasetGraphRDFSLive(
+            DatabaseMgr.connectDatasetGraph(Location.create(base.resolve("databases/static"))), "static");
         server = FusekiServer.create().port(0)
+            .add("/static", staticDsg)
             .fusekiModules(FusekiModules.create(new FMod_LinkedFuseki(), FMod_Admin.create()))
             .build().start();
         root = "http://localhost:" + server.getHttpPort();
@@ -76,5 +85,19 @@ class AdminTemplateTest {
         Resp all = send("GET", ds + "/stored", null, "application/n-quads", null);
         assertEquals(200, all.status());
         assertEquals(0, lines(all.body()), "a re-created name starts empty");
+    }
+
+    @Test
+    void anUnmanagedDatasetKeepsItsFiles() {
+        assertEquals(2, update(root + "/static/update", "INSERT DATA { :s :p :o }").status() / 100);
+        assertTrue(Files.isDirectory(base.resolve("databases/static")));
+        int status = send("DELETE", root + "/$/datasets/static", null, null, null).status();
+        assertEquals(200, status);
+        assertTrue(Files.isDirectory(base.resolve("databases/static")), "Fuseki keeps an unmanaged dataset's files; so does the module");
+    }
+
+    @Test
+    void aFailedDeleteKeepsTheFiles() {
+        assertEquals(404, send("DELETE", root + "/$/datasets/nosuch", null, null, null).status());
     }
 }

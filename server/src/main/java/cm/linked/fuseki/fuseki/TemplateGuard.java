@@ -21,15 +21,25 @@ public final class TemplateGuard {
     static final String RESOURCE = "/cm/linked/fuseki/config-tdb2";
     static final String TEMPLATE = "templates/config-tdb2";
 
-    public enum Result { NO_BASE, WRITTEN, REPLACED, UNCHANGED }
+    public enum Result { NO_BASE, WRITTEN, REPLACED, UNCHANGED, FAILED }
 
     private TemplateGuard() {}
 
-    /** Applies the guard to {@code $FUSEKI_BASE} (system property first, then the environment). */
+    /**
+     * Applies the guard to the run area Fuseki uses: {@code $FUSEKI_BASE} (system property first,
+     * then the environment), else an existing {@code run} directory in the working directory (the
+     * image always sets {@code FUSEKI_BASE}). Without either there is no run area yet: nothing to
+     * guard, which is logged.
+     */
     public static Result ensure() {
         String base = Lib.getenv("FUSEKI_BASE");
-        if ( base == null || base.isBlank() )
+        if ( base == null || base.isBlank() ) {
+            Path run = Path.of("run");
+            if ( Files.isDirectory(run) )
+                return ensure(run);
+            LOG.info("[linked-fuseki] FUSEKI_BASE is not set and there is no run/ area: the config-tdb2 template is not guarded");
             return Result.NO_BASE;
+        }
         return ensure(Path.of(base));
     }
 
@@ -50,7 +60,9 @@ public final class TemplateGuard {
             LOG.info("[linked-fuseki] wrote {}", file);
             return Result.WRITTEN;
         } catch (IOException ex) {
-            throw new IllegalStateException("[linked-fuseki] cannot write " + file + ": " + ex.getMessage(), ex);
+            // A read-only template (a mounted file) does not stop the server; say so loudly.
+            LOG.error("[linked-fuseki] cannot write {} ({}): datasets created with dbType=tdb2 may not infer RDFS classes", file, ex.getMessage());
+            return Result.FAILED;
         }
     }
 

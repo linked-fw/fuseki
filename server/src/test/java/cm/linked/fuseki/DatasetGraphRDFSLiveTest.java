@@ -323,4 +323,80 @@ class DatasetGraphRDFSLiveTest {
         assertEquals(size, storedSize(stored));
         assertTrue(ask(live, "ASK { :x a :b }"));
     }
+
+    @Test
+    void aWriterThatWaitedForTheWriterLockSeesTheCommittedHierarchy() throws Exception {
+        update(live, "INSERT DATA { :x a :a }");
+        ask(live, "ASK { ?s ?p ?o }");
+        live.begin(ReadWrite.WRITE);
+        live.add(Quad.defaultGraphIRI, ex("a"), RDFS.Nodes.subClassOf, ex("b"));
+        AtomicReference<Boolean> seen = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch started = new CountDownLatch(1);
+        Thread w2 = new Thread(() -> {
+            try {
+                started.countDown();
+                Txn.executeWrite(live, () -> seen.set(askInTxn(live, "ASK { :x a :b }")));
+            } catch (Throwable ex) {
+                failure.set(ex);
+            }
+        });
+        w2.start();
+        started.await(10, TimeUnit.SECONDS);
+        Thread.sleep(200);   // w2 is blocked in begin(WRITE)
+        live.commit();
+        live.end();
+        w2.join(20_000);
+        if ( failure.get() != null )
+            throw new AssertionError(failure.get());
+        assertTrue(seen.get(), "a writer that began after the commit reads with the new hierarchy");
+        // A delete that relies on the new axiom.
+        update(live, "INSERT DATA { :x :tag 't' }");
+        live.begin(ReadWrite.WRITE);
+        live.add(Quad.defaultGraphIRI, ex("a"), RDFS.Nodes.subClassOf, ex("c"));
+        Thread w3 = new Thread(() -> update(live, "DELETE { ?s :tag ?t } WHERE { ?s a :c ; :tag ?t }"));
+        w3.start();
+        Thread.sleep(200);
+        live.commit();
+        live.end();
+        w3.join(20_000);
+        assertFalse(ask(live, "ASK { :x :tag ?t }"), "the blocked update matched through the new axiom");
+    }
+
+    @Test
+    void promotionSeesTheHierarchyOfItsSnapshot() {
+        update(live, "INSERT DATA { :x a :a }");
+        ask(live, "ASK { ?s ?p ?o }");
+        live.begin(TxnType.READ_COMMITTED_PROMOTE);
+        try {
+            assertFalse(askInTxn(live, "ASK { :x a :b }"));
+            Thread t = new Thread(() -> update(live, "INSERT DATA { :a rdfs:subClassOf :b }"));
+            t.start();
+            try { t.join(20_000); } catch (InterruptedException ex) { throw new RuntimeException(ex); }
+            assertTrue(live.promote());
+            assertTrue(askInTxn(live, "ASK { :x a :b }"), "read-committed promotion moved to the new data and hierarchy");
+            live.commit();
+        } finally {
+            live.end();
+        }
+    }
+
+    @Test
+    void wholeDatasetClearCopyMoveAdd() {
+        update(live, "INSERT DATA { :x a :a . :a rdfs:subClassOf :b }");
+        Txn.executeWrite(live, () -> live.clear());   // GSP PUT of the whole dataset clears first
+        update(live, "INSERT DATA { :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        update(live, "INSERT DATA { GRAPH :h { :a rdfs:subClassOf :b } }");
+        update(live, "ADD :h TO DEFAULT");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, "DELETE DATA { :a rdfs:subClassOf :b }");
+        update(live, "COPY :h TO DEFAULT");
+        update(live, "INSERT DATA { :x a :a }");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, "INSERT DATA { GRAPH :h2 { :y :p :z } }");
+        update(live, "MOVE :h2 TO DEFAULT");   // replaces the default graph, axiom included
+        update(live, "INSERT DATA { :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+    }
 }

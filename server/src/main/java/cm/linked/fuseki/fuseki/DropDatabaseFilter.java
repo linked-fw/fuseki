@@ -28,11 +28,15 @@ import cm.linked.fuseki.rdfs.DatasetGraphRDFSLive;
 import cm.linked.fuseki.rdfs.LiveDatasets;
 
 /**
- * Completes {@code DELETE /$/datasets/<name>} for a live RDFS dataset. Fuseki removes a deleted
- * dataset's database files only when the service's dataset is TDB2 itself, which a wrapped
- * dataset is not; the files would stay and a dataset re-created under the same name would reopen
- * the old data. After a successful delete this removes them, under the same rule as Fuseki's own:
- * only {@code <run area>/databases/<name>}, never a symbolic link.
+ * Completes {@code DELETE /$/datasets/<name>} for a live RDFS dataset created through the admin
+ * API. Fuseki removes a deleted dataset's database files only when the service's dataset is TDB2
+ * itself, which a wrapped dataset is not; the files would stay and a dataset re-created under the
+ * same name would reopen the old data. This removes them under Fuseki's own rule: only a managed
+ * dataset (exactly one {@code configuration/<name>.*} file, which Fuseki's delete removes), only
+ * {@code <run area>/databases/<name>}, never a symbolic link, and only when the delete succeeded:
+ * 2xx, the configuration file gone and the name no longer registered. Datasets declared in a
+ * shared configuration file (for example {@code ds} in {@code assembler.ttl}) are never touched,
+ * as Fuseki leaves them. The removal holds the server lock that dataset creation takes.
  */
 public class DropDatabaseFilter implements Filter {
     private static final Logger LOG = LoggerFactory.getLogger("cm.linked.fuseki");
@@ -54,7 +58,18 @@ public class DropDatabaseFilter implements Filter {
         int status = (resp instanceof HttpServletResponse hresp) ? hresp.getStatus() : 0;
         if ( status < 200 || status >= 300 )
             return;
-        remove(target);
+        HttpServletRequest hreq = (HttpServletRequest) req;
+        String name = datasetName(hreq);
+        FusekiServerCtl serverCtl = FusekiServerCtl.get(hreq.getServletContext());
+        Object lock = serverCtl == null ? new Object() : serverCtl.getServerlock();
+        synchronized (lock) {
+            DataAccessPointRegistry registry = DataAccessPointRegistry.get(hreq.getServletContext());
+            if ( registry != null && registry.isRegistered(name) )
+                return;
+            if ( !FusekiServerCtl.existingConfigurationFile(name.substring(1)).isEmpty() )
+                return;
+            remove(target);
+        }
     }
 
     /** The dataset name in the request path, with a leading slash, or null. */
@@ -90,6 +105,9 @@ public class DropDatabaseFilter implements Filter {
             return null;
         Optional<DatasetGraphRDFSLive> live = LiveDatasets.find(dsg);
         if ( live.isEmpty() )
+            return null;
+        // Managed datasets only: exactly one configuration file of their own.
+        if ( FusekiServerCtl.dirConfiguration == null || FusekiServerCtl.existingConfigurationFile(name.substring(1)).size() != 1 )
             return null;
         return candidate(live.get().stored(), FusekiServerCtl.dirDatabases, name.substring(1));
     }
