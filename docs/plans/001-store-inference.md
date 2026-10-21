@@ -5,8 +5,8 @@ summary: >
   is rebuilt lazily after commits that touch the stored `rdfs:subClassOf` triples; a stored-only
   `/<ds>/stored` endpoint; SERVICE off), the image `ghcr.io/linked-fw/fuseki:6.2.0-1` with the
   inferring `config-tdb2` template and an inferring `ds` dataset, its CI and GHCR publishing, the
-  measurements that settle the *pending F1* contract items, the `storedQueryEndpoint` /
-  `storedDataEndpoint` helpers and the README.
+  measurements that settle the *pending F1* contract items, the `storedEndpoint` helper and
+  the README.
 status: Plan
 packages: [fuseki]
 ---
@@ -45,40 +45,48 @@ measurements; the master edits them here before C1 and K1's store phase start.
   :tdb a tdb2:DatasetTDB2 ; tdb2:location "/fuseki-base/databases/<name>" .
   ```
   It infers over every graph; its hierarchy is the closure of the stored `rdfs:subClassOf`
-  triples in the default graph. A commit that adds or removes one marks the view dirty; the first
-  read after it rebuilds once (so a burst of sync commits costs one rebuild), and at start.
+  triples in the default graph. A commit that adds or removes one marks the hierarchy stale and
+  bumps a generation counter; the first transaction to begin afterwards rebuilds it once (other
+  starting readers wait), and each transaction keeps the hierarchy it began with. A burst of sync
+  commits costs one rebuild; a writer sees its own `subClassOf` change from its next transaction.
 - The image keeps the base image's `ds` dataset and its `shacl` endpoint under
-  `ENABLE_SHACL=true`, as `lf:DatasetRDFSLive` (core's SHACL tests validate through it).
+  `ENABLE_SHACL=true`, as `lf:DatasetRDFSLive` over TDB2 at `/fuseki-base/databases/ds` (the base
+  image's `ds` is TDB1 with a union default graph; its Lucene index and `ENABLE_*` handling are
+  kept). Core's SHACL tests validate through it.
+- The module rewrites `$FUSEKI_BASE/templates/config-tdb2` at start when it is missing or
+  different, with a warning (Fuseki copies its stock template only when the file is missing, so a
+  persisted volume would otherwise create plain datasets silently).
 - `templates/config-tdb2` (baked in) declares the service with the endpoints CN uses today
   (`""`/`sparql`/`query`, `""`/`update`, `""`/`data` GSP read-write, `upload`, `get`) over
-  `lf:DatasetRDFSLive`, plus `stored`. A form-created dataset (`POST $/datasets`,
+  `lf:DatasetRDFSLive`, plus `stored` and `shacl` (store validation, decision 23). A form-created dataset (`POST $/datasets`,
   `dbName`, `dbType=tdb2`) gets it. **Only `dbType=tdb2` datasets infer**; `mem` (`config-mem`)
   stays plain.
-- `/<ds>/stored`: SPARQL query and GSP read over the stored triples only (every graph). *pending
-  F1:* whether one endpoint name serves both (an operation per content type) or two
-  (`stored` query, `stored-data` GSP).
+- `/<ds>/stored`: one module operation (`lf:stored`) over the stored triples only (every graph),
+  run by TDB2's own query engine: a SPARQL query or a GSP read, chosen from the request; writes
+  answer 405.
+- **Backups and copies stream `GET /<ds>/stored` as N-Quads.** `POST $/backup` and `GET /<ds>`
+  dump the service's dataset, inferred triples included, so they are never used for these
+  datasets.
+- `DELETE $/datasets/<ds>` removes the TDB2 files too (a module filter finishes what Fuseki skips
+  for a wrapped dataset); a re-created name starts empty.
 - `arq:httpServiceAllowed=false` set by the module for every dataset.
-- *pending F1:* what `POST $/backup/<ds>` dumps through the view (stored or stored + inferred) and,
-  if the latter, the module makes it stored-only or backups use `/<ds>/stored`; whether
-  `DELETE $/datasets/<ds>` removes the TDB2 files of the wrapped dataset (Fuseki skips non-TDB2
-  datasets); whether `text:TextDataset` (pg-test) works over `lf:DatasetRDFSLive`.
+- *pending F1:* whether `text:TextDataset` (pg-test) works over `lf:DatasetRDFSLive`.
 
 ### `@_linked/fuseki` (provider F1; consumers C1, W1, W2, T1)
 
 ```ts
 // @_linked/fuseki/utils/datasets — existing signatures unchanged (dbType stays: the template infers)
-export function storedQueryEndpoint(base: string, dataset: string): string;   // `${base}/${dataset}/stored`
-export function storedDataEndpoint(base: string, dataset: string): string;    // per F1's endpoint names
+export function storedEndpoint(base: string, dataset: string): string;   // `${base}/${dataset}/stored`: query and GSP read
 ```
 README: the image, the template, the stored endpoints, the graph rule (decision 6).
 <!-- verbatim:end -->
 
 ### Contract changes this sub-plan proposes
 
-Raised with the master when this sub-plan was written; the master edits §Contracts, then this
-section is folded into the verbatim copy above. Until then F1 builds to these.
+Raised with the master when this sub-plan was written. Items 1-3 and 5-7 are **adopted in the
+master plan** (its §Contracts, copied above); item 4 stays *pending F1*. The reasoning is kept.
 
-1. **One stored endpoint name** (settles the first *pending F1*, from the Jena source; F1's
+1. **One stored endpoint name** *Adopted in the master plan, as one `storedEndpoint`.* (settles the first *pending F1*, from the Jena source; F1's
    measurements confirm it). Fuseki's `Dispatcher.chooseOperation` only ever returns the standard
    operations (`Query`, `Update`, `GSP_R`, `GSP_RW`, or one registered by content type), so two
    custom operations under one endpoint name are never told apart. The module registers **one**
@@ -95,14 +103,14 @@ section is folded into the verbatim copy above. Until then F1 builds to these.
    export function storedQueryEndpoint(base: string, dataset: string): string;   // `${base}/${dataset}/stored`
    export function storedDataEndpoint(base: string, dataset: string): string;    // the same URL: the endpoint picks query or GSP
    ```
-2. **Backups** (second *pending F1*). `ActionBackup` dumps `ActionCtl.getItemDataset(action)`, the
+2. **Backups** *Adopted in the master plan.* (second *pending F1*). `ActionBackup` dumps `ActionCtl.getItemDataset(action)`, the
    service's dataset, with `RDFDataMgr.write(out, dsg, Lang.NQUADS)` (`Backup.java:115`); over the
    view that is stored **plus inferred** triples, and a restore would materialize them. Expected
    text (F1's M3 confirms):
    > `POST $/backup/<ds>` dumps stored and inferred triples: never use it for an
    > `lf:DatasetRDFSLive` dataset. Backups stream `GET /<ds>/stored` (`Accept: application/n-quads`).
    > `GET /<ds>` (the dataset URL) includes inferred quads too: copies read `/stored`.
-3. **Delete** (third *pending F1*). `ActionDatasets` deletes the database files only when
+3. **Delete** *Adopted in the master plan.* (third *pending F1*). `ActionDatasets` deletes the database files only when
    `TDBInternal.isTDB2(dataService.getDataset())`, which is `instanceof DatasetGraphSwitchable`
    (`ActionDatasets.java:467-476`, `TDBInternal.java:53-55`): false for the wrapper. Fuseki still
    expels the TDB2 database (`DataService.expel` unwraps through `getWrapped()`), so the files are
@@ -110,11 +118,11 @@ section is folded into the verbatim copy above. Until then F1 builds to these.
    module adds a servlet filter that completes the delete. Expected text (F1's M4 confirms):
    > `DELETE $/datasets/<ds>` removes the dataset's TDB2 files under `/fuseki-base/databases/` (the
    > module completes what Fuseki skips for wrapped datasets); a re-created name starts empty.
-4. **Text index** (fourth *pending F1*): expected to work (`text:TextDataset` wraps any assembled
+4. **Text index** *Still pending F1 in the master plan.* (fourth *pending F1*): expected to work (`text:TextDataset` wraps any assembled
    dataset; `DatasetGraphText` is a `DatasetGraphWrapper`, and the module unwraps through it).
    Proposed text after M5: "`text:TextDataset` works over `lf:DatasetRDFSLive` (`text:dataset` →
    the live type → TDB2), as pg-test declares it."
-5. **Lazy rebuild** (coordinator's addition, from core's K1 detail: a first ontology sync is ~800
+5. **Lazy rebuild** *Adopted in the master plan.* (coordinator's addition, from core's K1 detail: a first ontology sync is ~800
    small commits that each touch `rdfs:subClassOf`). Replace "rebuilt after a commit that adds or
    removes one (and at start)" with:
    > its hierarchy is the closure of the stored `rdfs:subClassOf` triples in the default graph. A
@@ -122,7 +130,7 @@ section is folded into the verbatim copy above. Until then F1 builds to these.
    > transaction that begins after it rebuilds it once (concurrent beginners wait for that one
    > rebuild), so a burst of commits costs one rebuild. A transaction sees the hierarchy as of its
    > begin; a writer sees its own `subClassOf` changes from its next transaction on.
-6. **The image's `ds` dataset** (coordinator's addition; core's SHACL tests validate through it).
+6. **The image's `ds` dataset** *Adopted in the master plan.* (coordinator's addition; core's SHACL tests validate through it).
    Add to §The image:
    > The image keeps the base image's `ds` service (`/fuseki-base/configuration/assembler.ttl`,
    > `sparql` and `data` read; `update`, `data` read-write and `shacl` switched on by
@@ -134,7 +142,7 @@ section is folded into the verbatim copy above. Until then F1 builds to these.
    `tdb:unionDefaultGraph true`; decision 6 keeps the union default graph off and decision 2 wraps
    TDB2, so the image's `ds` changes both. Nothing persists in `ds` across consumers today (core's
    tests are throwaway); the README says so.
-7. **SHACL on template datasets** (a gap, not a decision): decision 23 and §Features say the
+7. **SHACL on template datasets** *Adopted in the master plan.* (a gap, not a decision): decision 23 and §Features say the
    store's SHACL validation runs over the view, but the stock `config-tdb2` (and so the contract's
    template) has no `shacl` endpoint. Proposed: the template adds
    `fuseki:endpoint [ fuseki:operation fuseki:shacl ; fuseki:name "shacl" ]`. F1 adds it only if
@@ -159,7 +167,7 @@ section is folded into the verbatim copy above. Until then F1 builds to these.
    push; publish `ghcr.io/linked-fw/fuseki:<tag>` (public) from `main` when `server/IMAGE_TAG`
    changes.
 3. Measurements that settle every *pending F1* item and the two additions (Phase 2, M1-M13).
-4. `@_linked/fuseki`: `storedQueryEndpoint`, `storedDataEndpoint`; README; a minor changeset.
+4. `@_linked/fuseki`: `storedEndpoint`; README; a minor changeset.
 
 **Verify** (each quoted with its output and timing in report 001):
 ```bash
@@ -346,9 +354,9 @@ the image has its own version, `server/IMAGE_TAG`, and its own workflow):
   **public** once (package settings → visibility) and links it to the repository if the label did
   not. Recorded in the README's "Releasing the image" and in report 001's follow-ups.
 
-**`@_linked/fuseki` helpers** (`src/utils/datasets.ts`, exported through `src/index.ts`'s
-`export * from './utils/datasets.js'`): `storedQueryEndpoint(base, dataset)` and
-`storedDataEndpoint(base, dataset)`, both `${trimmed base}/${dataset}/stored` (trailing slashes of
+**`@_linked/fuseki` helper** (`src/utils/datasets.ts`, exported through `src/index.ts`'s
+`export * from './utils/datasets.js'`): `storedEndpoint(base, dataset)`,
+`${trimmed base}/${dataset}/stored` (trailing slashes of
 `base` trimmed like `FusekiStore` does), JSDoc saying what each request form returns; existing
 signatures unchanged (`createDataset`'s `dbType` stays `tdb2`). Tests in
 `src/utils/datasets.test.ts`.
@@ -358,7 +366,7 @@ becomes a one-line pointer to it): "Fuseki store" (the existing env vars, kept);
 (tag, what it adds to `secoresearch/fuseki:6.2.0`, env, a `docker run` and a compose snippet);
 "Datasets infer classes" (the template, the assembler snippet for static datasets, classes only,
 every graph, lazy rebuild, a delete of an inferred triple is a no-op); "The `ds` dataset";
-"Stored-only reads" (`/<ds>/stored`, the helpers, why copies, counts and backups use it, `GET
+"Stored-only reads" (`/<ds>/stored`, the helper, why copies, counts and backups use it, `GET
 /<ds>` includes inferred quads); "Graphs" (decision 6: the default graph is the stored default
 graph, no `unionDefaultGraph`, named graphs persist and are inferred); "Backups and deletion"
 (per M3, M4); "SERVICE is off"; "Building the image locally"; "Releasing the image" (`IMAGE_TAG`,
@@ -369,13 +377,13 @@ the image workflow, public visibility). Current state only.
 | File | Change |
 |---|---|
 | `package.json` | none needed: `files` is an allowlist (`lib`, `lincd-fuseki.README.md`, `CHANGELOG.md`), so `server/` and `docs/` are already excluded; Verify's `npm pack --dry-run` proves it |
-| `src/utils/datasets.ts` | add the two helpers (it holds `createDataset`, `ensureDatasetExists`, `clearDataset`, `ensureDatasetsExist`, `clearDatasets`; `dbType` is a free string) |
+| `src/utils/datasets.ts` | add the `storedEndpoint` helper (it holds `createDataset`, `ensureDatasetExists`, `clearDataset`, `ensureDatasetsExist`, `clearDatasets`; `dbType` is a free string) |
 | `src/index.ts` | none: already `export * from './utils/datasets.js'` |
 | `src/utils/datasets.test.ts` | new; `jest.config.cjs` matches `**/src/**/*.test.ts` |
 | `src/shapes/FusekiStore.ts` | none: it uses `/sparql` (`:157`), `/update` (`:202`), `/data` (`:110`), all kept by the template |
 | `README.md`, `lincd-fuseki.README.md` | as above |
 | `.gitignore` | add `server/target/` |
-| `.changeset/<name>.md` | minor: the stored-endpoint helpers and the image docs |
+| `.changeset/<name>.md` | minor: the stored-endpoint helper and the image docs |
 | `.github/workflows/pr.yml`, `publish.yml` | unchanged (shared `linked-fw/.github` workflows; `publish.yml`'s filename is load-bearing for npm trusted publishing) |
 | `.github/workflows/server.yml`, `image.yml` | new, as above |
 | `server/pom.xml`, `server/Dockerfile`, `server/.dockerignore`, `server/IMAGE_TAG` | new, as above (`IMAGE_TAG` holds `6.2.0-1`) |
@@ -502,7 +510,7 @@ contract text.
 | M4 | Delete | `DELETE $/datasets/m1`; `docker compose exec fuseki ls /fuseki-base/databases/m1` (gone with the filter; run once with the filter off via `-Dlf.dropFilter=false` to record Fuseki's own behaviour); re-create `m1`: stored count 0; settles item 3 |
 | M5 | Text index | `server/probe/text.ttl` (pg-test's shape: `text:TextDataset` → `lf:DatasetRDFSLive` → TDB2, Lucene) mounted in `configuration/`; insert a labelled subclass instance: `text:query` finds it, ASK superclass true, `/stored` has no inferred triple; settles item 4 |
 | M6 | Compact | `POST $/compact/m1?deleteOld=true`: status and the stored count after |
-| M7 | Restart | named-graph data + hierarchy, `docker compose -p lf-f1-probe restart`: inference and counts unchanged; the log shows one startup rebuild per dataset |
+| M7 | Restart | named-graph data + hierarchy, `docker compose -p lf-f1-probe restart`: inference and counts unchanged; the log shows one rebuild per dataset, on its first transaction after the restart |
 | M8 | SERVICE | a `SERVICE` query: status (422 expected) and Fuseki's log line |
 | M9 | Lazy rebuild | 800 sequential `INSERT DATA { ex:Ci rdfs:subClassOf ex:Root }` updates (as K1's first sync), then one ASK `ex:i a ex:Root` for an instance `ex:i a ex:C800`: total time of the burst vs the same burst on a plain TDB2 dataset; the log shows one rebuild and its ms |
 | M10 | Benchmark | `server/bench` at ~1M triples (schema.org's 952 `subClassOf`) on `lf:DatasetRDFSLive` vs stock `ja:DatasetRDFS` vs plain TDB2 (Q1-Q9, inserts/deletes); acceptance: within 20 % of decision 9's stock numbers per query; plus a hierarchy change mid-run (rebuild ms; the next query sees it) |
