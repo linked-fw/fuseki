@@ -65,6 +65,7 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
         this.tracker = new SubClassOfTracker(stored);
         this.label = label;
         this.current = Txn.calculateRead(stored, () -> build(0));
+        LOG.info("[linked-fuseki] {}: hierarchy built ({} subClassOf, {} ms)", label, current.subClassOf(), lastRebuildMillis);
     }
 
     /** The stored dataset (no inference). */
