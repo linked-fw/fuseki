@@ -44,13 +44,15 @@ Source: sub-plan [001](../plans/001-store-inference.md), CN plan 070 step F1 (se
   different, WARN when it replaced one); `DropDatabaseFilter` on `/$/datasets/*` (after a 2xx
   `DELETE` of a live dataset, removes `<run area>/databases/<name>` when that is exactly the TDB2
   location and not a symbolic link; `-Dlf.dropFilter=false` turns it off, for M4).
-- **JUnit** (38 tests, `mvn -B -f server verify`): `DatasetGraphRDFSLiveTest` (inference in the
+- **JUnit** (43 tests, `mvn -B -f server verify`): `DatasetGraphRDFSLiveTest` (inference in the
   default, named and union graphs; stored dataset free of inferred triples; write paths INSERT
   DATA, DELETE DATA, DELETE WHERE, INSERT WHERE, CLEAR DEFAULT, CLEAR ALL, DROP ALL, LOAD,
   graph-level add/delete/remove/clear as GSP does, quads read into the dataset, `addGraph`; no
   rebuild for other predicates or a named-graph `subClassOf`; aborted and un-committed writes;
   800 commits → exactly one rebuild, the query sees all 800; 8 concurrent readers → one rebuild;
   a reader pinned across a hierarchy commit; a writer sees its change from its next transaction;
+  a writer blocked on the writer lock reads with the hierarchy it waited for; read-committed
+  promotion; whole-dataset clear, ADD/COPY/MOVE into the default graph;
   a cycle; `subPropertyOf`/`domain`/`range` infer nothing; deleting an inferred triple is a no-op),
   `AssemblerTest` (assembler, persistence of a named graph and its inference across close, expel
   and reopen; missing `ja:dataset`; `text:TextDataset` over the type), `FusekiStoredTest`
@@ -58,16 +60,18 @@ Source: sub-plan [001](../plans/001-store-inference.md), CN plan 070 step F1 (se
   inferred triple; writes to `/stored` 405; `GET /<ds>` holds inferred quads; SERVICE 422; GSP
   PUT/POST/DELETE on `?default`; quads POST), `AdminTemplateTest` (run area with the stock
   template: replaced; a form-created dataset infers; the delete removes the files; a re-created
-  name is empty), `TemplateGuardTest`, `DropDatabaseFilterTest`.
+  name is empty; an unmanaged live dataset keeps its files; a failed delete), `TemplateGuardTest`,
+  `DropDatabaseFilterTest`.
 
 **The image** (`server/Dockerfile`): `secoresearch/fuseki:6.2.0` pinned by digest, the jar in
 `/javalibs/`, `templates/config-tdb2` (the stock template with the dataset swapped and `stored` and
 `shacl` endpoints added, no `unionDefaultGraph`), `configuration/assembler.ttl` (`ds`: the base
 image's service lines byte for byte, plus `stored`; `text:TextDataset` → `lf:DatasetRDFSLive` →
 TDB2 at `/fuseki-base/databases/ds`). `server/IMAGE_TAG` `6.2.0-1` equals the pom version.
-`server/scripts/smoke.sh` (16 checks, ~4 s). Workflows: `server.yml` (on push touching `server/`:
+`server/scripts/smoke.sh` (18 checks, ~4 s). Workflows: `server.yml` (on push touching `server/`:
 version check, `mvn verify`, image build, smoke; not a required check) and `image.yml` (on `main`
-touching `server/`, or dispatch: skips an existing tag, verifies, builds amd64 and smokes, then
+touching `server/`, or dispatch: logs in, skips an existing tag and fails on any other inspect
+error, verifies, builds amd64 and smokes, then
 pushes amd64+arm64 to `ghcr.io/linked-fw/fuseki:<IMAGE_TAG>`).
 
 **The measurement rig** (`server/probe/`: `compose.yml`, `probe.sh`, `text.ttl`, `plain.ttl`)
@@ -84,25 +88,32 @@ stored reads, graphs, backups and deletion, SERVICE, Fuseki 6.2 notes, building,
 
 On the built image `linked-fuseki:dev` (module `6.2.0-1`), compose project `f1-probe`, ports
 3234/3235/3232, never 3030. `LF_BENCH_DATA=<ideation data> server/probe/probe.sh`, output as
-printed (2026-10-21, total 3:26):
+printed. This is the run after the review fixes (2026-10-21, total 4:22); the M1-M13 lines of
+the first run (before them) were the same apart from timings:
 
 ```
 image: linked-fuseki:dev; module: [linked-fuseki] module 6.2.0-1: lf:DatasetRDFSLive
-M1 template dataset infers: create 200; /m1/sparql ASK a⊑B true; /m1/stored false; endpoints gsp-r='','get' gsp-rw='','data' query='sparql','query','' shacl='shacl' stored='stored' update='','update'
+M1 template dataset infers: create 200; /m1/sparql ASK a⊑B true; /m1/stored false; endpoints gsp-r='','get' gsp-rw='','data' query='query','sparql','' shacl='shacl' stored='stored' update='update',''
 M2 stored forms: GET quads 3 (stored 3); ?default 2; ?graph= 1; ?query= ASK stored true; POST sparql-query ASK inferred false; POST form query= true; POST GSP 405; PUT GSP 405; sparql-update POST 405
-M3 $/backup: task 1, file m1_2026-10-21_20-24-01.nq.gz, 5 quads (stored 3), inferred 'a a B' lines: 1
+M3 $/backup: task 1, file m1_2026-10-21_20-48-15.nq.gz, 5 quads (stored 3), inferred 'a a B' lines: 1
 M4 delete (module filter on): DELETE 200; files gone; re-created m1 stored quads 0
 M4 delete (filter off, Fuseki alone): DELETE 200; files present; re-created m4 stored quads 2
 M5 text:TextDataset over lf:DatasetRDFSLive: text:query finds true; text hit a superclass true; /stored inferred false
 M6 compact: status 200 task 1; stored quads after 2 (expect 2); ASK a⊑B true; write after compact 204 then ASK true
-M7 restart: stored quads 2 -> 2; named-graph inference true; log: [linked-fuseki] /fuseki-base/databases/m7/: hierarchy built (0 subClassOf, 0 ms) [linked-fuseki] /fuseki-base/databases/m7/: hierarchy built (1 subClassOf, 2 ms) 
-M8 SERVICE: status 422; log: [3] 422 Unprocessable Entity (3 ms)
-M9 lazy rebuild: 800 commits 42437 ms on the type vs 51637 ms plain TDB2; rebuilds during the burst 0; first ASK true in 106 ms; rebuilds after it 1; rebuilt (800 subClassOf, 18 ms, generation 800)
+M7 restart: stored quads 2 -> 2; named-graph inference true; log: [linked-fuseki] /fuseki-base/databases/m7/: hierarchy built (0 subClassOf, 0 ms) [linked-fuseki] /fuseki-base/databases/m7/: hierarchy built (1 subClassOf, 1 ms) 
+M8 SERVICE: status 422; log: [3] 422 Unprocessable Entity (4 ms)
+M9 lazy rebuild: 800 commits 42236 ms on the type vs 43563 ms plain TDB2; rebuilds during the burst 0; first ASK true in 121 ms; rebuilds after it 1; rebuilt (800 subClassOf, 19 ms, generation 800)
 M11 copy round trip: POST 200; stored quads src 5 dst 5; inferred dst a⊑B true g:b⊑B true
 M12a ds (ENABLE_*=true): infers true; /ds/stored false; text true; shacl report focus :a 1; db dir ds lucene m11dst m11src m6 m7 m9 plain textprobe textprobe-lucene 
 M12b ds (ENABLE_* unset): update 405; shacl 405; data PUT 405; data GET 200; sparql false
 M13 template guard: stock file mentions the type 0 -> after start 2; WARN lines 1; form-created dataset infers true
 ```
+
+M10 in that run was taken while the machine was under heavy load from other agents (plain TDB2's
+Q1 took 31 ms instead of 6), so the benchmark tables below are the first run's (module before the
+review fixes; the fixes change only what happens at a transaction's first read when the shared
+view is older, not the read path). The rerun's hierarchy change: `H1` first query after the insert
+10.2 ms, true; rebuilds 6 ms and 5 ms; hierarchy built at open in 78 ms.
 
 M10, the ~1M-triple benchmark (951,284 triples: 850,470 default-graph incl. schema.org's 952
 `subClassOf`, 99,862 in a named graph; loaded with `tdb2.tdbloader`). `bench` is
@@ -223,24 +234,32 @@ Every *pending F1* item and the measured additions. Text to replace or add in CN
    write transaction that begins after the previous commit, so it would rebuild 799 times
    (measured in JUnit before the change), contradicting "a burst of sync commits costs one
    rebuild". The view is resolved at a transaction's first read instead (M9: 0 rebuilds during
-   800 commits, 1 at the next read, 18 ms). Proposed text:
+   800 commits, 1 at the next read, 19 ms). Proposed text:
    > It infers over every graph; its hierarchy is the closure of the stored `rdfs:subClassOf`
-   > triples in the default graph. A commit that adds or removes one marks the hierarchy stale and
-   > bumps a generation counter; the first transaction that reads afterwards rebuilds it once,
-   > inside that transaction (other readers wait for it), and each transaction keeps the hierarchy
-   > it first read with until it ends. Write-only transactions never rebuild, so a burst of sync
-   > commits costs one rebuild, at the next read. A writer sees its own `subClassOf` change from
-   > its next transaction. Opening a dataset (start, restart) builds its hierarchy once.
-   One more precise point for consumers: a transaction that begins in the instant between another
-   transaction's TDB2 commit and that commit's generation bump uses the previous hierarchy for
-   its duration (the next transaction rebuilds); the writer itself never sees this.
+   > triples in the default graph. A commit that adds or removes one marks the hierarchy stale;
+   > the first transaction that reads afterwards rebuilds it once, inside that transaction (other
+   > readers wait for it), and each transaction keeps the hierarchy it first read with until it
+   > ends. Write-only transactions never rebuild, so a burst of sync commits costs one rebuild, at
+   > the next read. A transaction never reads with a hierarchy older than its snapshot (one that
+   > waited for the writer lock or began during a commit builds its own); it may read with a newer
+   > one when another transaction rebuilt after it began. A writer sees its own `subClassOf` change
+   > from its next transaction (within the same transaction only when the shared hierarchy was
+   > already stale at its first read). Opening a dataset (start, restart) builds its hierarchy
+   > once. Only writes through the dataset mark the hierarchy: a second service or assembler over
+   > the same TDB2 location does not.
 3. **Backups** — M3: `$/backup/m1` wrote 5 quads for 3 stored, the inferred `ex:a a ex:B` among
    them. The adopted text stands unchanged ("`POST $/backup` and `GET /<ds>` dump the service's
    dataset, inferred triples included, so they are never used for these datasets"); add `GET
    /<ds>/data` (GSP on the service, smoke: 3 triples for 2 stored) to the list.
 4. **Delete** — M4: Fuseki alone answers 200, leaves `/fuseki-base/databases/m4` on disk, and a
    re-created `m4` holds the old 2 quads; with the module the files are gone and the re-created
-   dataset is empty. The adopted text stands.
+   dataset is empty. Narrowed after review (Fuseki keeps the files of datasets declared in a
+   shared configuration file, and so must the module). Proposed text:
+   > `DELETE $/datasets/<ds>` removes the TDB2 files of a dataset created through the admin API
+   > (its own `configuration/<ds>.ttl`) under `/fuseki-base/databases/` (the module completes what
+   > Fuseki skips for wrapped datasets); a re-created name starts empty. Datasets declared in a
+   > shared configuration file (`ds`, cn-main, cn-ai, pg-test) are only unregistered, as on plain
+   > Fuseki.
 5. **One stored endpoint** — M2: whole dataset 3 quads, `?default` 2, `?graph=` 1, `?query=`,
    `POST application/sparql-query` and form `query=` answer from stored triples only; GSP POST and
    PUT and a SPARQL update POST answer 405. The adopted text stands.
@@ -317,9 +336,14 @@ the same plus `docker build` (1:45 cold) and `smoke.sh` (16 ok, 4 s).
 - **Rebuild at first read, not at begin** (contract item 2 above): needed for "a burst of
   commits costs one rebuild". `getW()` goes to the tracker, so writes never resolve a view; a
   view built by a writer after its own hierarchy change stays private.
-- **The generation is read before `begin`**, not after: a label read after begin can count a
-  commit that finished after the transaction's snapshot, and the view built from that snapshot
-  would carry a label newer than its data and never be rebuilt.
+- **Two counters instead of one generation read at begin.** A label read after `begin` can count
+  a commit that finished after the transaction's snapshot (the view would carry a label newer
+  than its data and never be rebuilt); a label read before `begin` alone (the first version) let a
+  writer that waited for TDB2's writer lock read with the hierarchy from before the commit it
+  waited for (review finding 1). A transaction now records the finished hierarchy commits before
+  `begin` (the label it may publish) and the started ones after it (what its snapshot may
+  contain); when the shared view is older than the latter it builds from its own snapshot.
+  Read-committed promotion resolves again.
 - **The tracker's mark is per thread**, not a dataset-wide flag: with one flag, a writer that
   begins while the previous writer is still in `end()` (TDB2 releases the writer lock at commit)
   could have its mark reset.
@@ -329,6 +353,10 @@ the same plus `docker build` (1:45 cold) and `smoke.sh` (16 ok, 4 s).
   the dataset URL instead, the other bulk path.
 - **Compose project `f1-probe`** (the step's instruction) instead of `lf-f1-probe`; smoke on
   3233, probe on 3234 and 3235, bench on 3232.
+- **The delete filter acts on managed datasets only** (its own configuration file, removed by the
+  delete; name unregistered; under the server lock), review finding 2.
+- **`TemplateGuard`** falls back to an existing `run/` when `FUSEKI_BASE` is unset and logs an
+  ERROR instead of stopping start when it cannot write the template.
 - `DropDatabaseFilter` compares the location's parent by real path (macOS temporary directories
   are reached through `/var` → `/private/var`); the database directory itself must still not be a
   link.
@@ -342,7 +370,7 @@ the same plus `docker build` (1:45 cold) and `smoke.sh` (16 ok, 4 s).
   `main`, so it is first exercised at R.
 - **pg-test's `fuseki:serviceUpload`**, and any consumer that relied on `/upload`: CN plan 070
   step C1 (§Contracts item from this report).
-- **Contract text items 1, 2, 6 and 10** handed to the master for §Contracts and sub-plan 001.
+- **Contract text items 1, 2, 4, 6 and 10** handed to the master for §Contracts and sub-plan 001.
 
 ## Independent review
 
