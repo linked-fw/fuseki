@@ -535,8 +535,31 @@ contract text.
 
 ## Progress
 
-- [ ] F1 — Phase 1: the module and its JUnit tests
-- [ ] F1 — Phase 2: image, workflows, measurements M1-M13 (report 001 drafted)
-- [ ] F1 — Phase 3: helpers, README, changeset, report 001
+- [x] F1 — Phase 1: the module and its JUnit tests
+- [x] F1 — Phase 2: image, workflows, measurements M1-M13 (report 001 drafted)
+- [x] F1 — Phase 3: helpers, README, changeset, report 001
 - [ ] F1 — independent review (sensitive step), no open medium or high finding
 - [ ] F1 — landed on `store-inference` (commit) and pushed; contract changes handed to the master
+
+## Outcome (F1)
+
+Record: [report 001](../reports/001-store-inference.md) (what was built, M1-M13 quoted, the full
+gate with timings, the independent review).
+
+- **Changed:** `server/` (module, 38 JUnit tests, image, smoke, probe rig, benchmark),
+  `.github/workflows/server.yml` and `image.yml`, `storedEndpoint` with tests, README, the
+  `lincd-fuseki.README.md` pointer, a minor changeset.
+- **Verification:** `mvn -B -f server verify` 38 tests BUILD SUCCESS (14.9 s); `docker build`;
+  `smoke.sh` 16 ok (3.8 s); `npx linked build && npm test` 12 tests (6.4 s); `npm pack --dry-run |
+  grep -c server/` 0; `probe.sh` M1-M13 (3:26). Output quoted in report 001.
+- **Settled pending item:** `text:TextDataset` works over `lf:DatasetRDFSLive` (M5, M12).
+- **Contract changes proposed** (report 001 §Settled contract items): the rebuild happens at a
+  transaction's first read, not at its begin (so write-only bursts cost one rebuild; M9: 800
+  commits, 0 rebuilds, 1 at the next read in 18 ms); the hierarchy is built when a dataset opens;
+  `$/compact` works; `/<ds>/upload` is not served on Fuseki 6.2 (405, stock image too); `GET
+  /<ds>/data` also includes inferred triples.
+- **Deviations:** generation read before `begin`; per-thread tracker mark; compose project
+  `f1-probe`; upload covered by neither JUnit nor smoke (does not exist on 6.2).
+- **Follow-ups:** image publish and public visibility at R (owner); pg-test's
+  `fuseki:serviceUpload` in C1; contract text to the master.
+

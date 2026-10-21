@@ -45,6 +45,8 @@ check "named graph inferred" "$(ask "$URL/smoke/sparql" 'ASK { GRAPH :g { :b a :
 check "/smoke/stored holds no inferred triple" "$(ask "$URL/smoke/stored" 'ASK { :a a :B }')" false
 n=$(curl -sf -H 'Accept: application/n-quads' "$URL/smoke/stored" | grep -c . || true)
 check "GET /smoke/stored quads = inserted" "$n" 3
+n=$(curl -sf -H 'Accept: application/n-triples' "$URL/smoke/data?default" | grep -c . || true)
+check "GET /smoke/data?default includes inferred triples" "$n" 3
 
 code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/n-quads' \
   --data-binary '<http://example.org/B> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C> .' "$URL/smoke")
