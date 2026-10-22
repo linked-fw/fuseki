@@ -11,7 +11,7 @@ fuseki:
     a owl:Ontology ;
     dcterms:description "Terms of the Apache Jena Fuseki store package."@en ;
     dcterms:title "Linked Fuseki"@en ;
-    owl:versionInfo "3.4.2" .
+    owl:versionInfo "3.6.0" .
 
 fuseki:FusekiStore
     a owl:Class ;
