@@ -3,8 +3,8 @@ summary: >
   Low findings of the independent reviews of the store-inference module and image (report 001)
   that were not fixed: read-committed auto-promotion bypasses the hierarchy check (embedded
   callers only); a failed write outside a transaction leaves its thread marked; no tests for
-  `dbType=mem` staying plain or for a reader that began mid-commit; the Maven build stage and the
-  workflow actions are pinned by tag, not digest.
+  `dbType=mem` staying plain or for a reader that began mid-commit; dataset `stream()` does not
+  infer; the Maven build stage and the workflow actions are pinned by tag, not digest.
 status: Open
 ---
 
@@ -21,8 +21,11 @@ callers, a test gap or supply-chain hardening.
 transaction to newer data. TDB2 also promotes a `READ_COMMITTED_PROMOTE` transaction by itself on
 its first write, without calling the wrapper's `promote`, so such a transaction keeps the view it
 resolved before the promotion and may read with a hierarchy older than the data it now sees.
-Fuseki's own endpoints begin `READ` or `WRITE` transactions, so only embedded callers that begin
-`READ_COMMITTED_PROMOTE` and read before writing are affected.
+It also never refreshes the transaction's `started` count, so even a transaction that writes
+first (auto-promoting) and then reads sees the newer data with the older hierarchy (reproduced:
+another thread commits `:a rdfs:subClassOf :b . :x a :a`; the promoted transaction sees `:x a :a`
+but not `:x a :b`). Fuseki's own endpoints begin `READ` or `WRITE` transactions, so only embedded
+callers that begin `READ_COMMITTED_PROMOTE` are affected.
 
 First question: detect the mode change at the next read (compare `transactionMode()` and
 `transactionType()` against what `TxnState` recorded) or refuse `READ_COMMITTED_PROMOTE`?
@@ -47,7 +50,20 @@ First question: clear the mark when the delegated write throws, or mark only aft
   its own view. The writer-that-waited case has a test; the reader that begins between `pending`
   and `generation` has none (it needs a hook to pause a commit inside `stored.commit()`).
 
-## 4. Supply-chain pinning
+- **Private builds:** the GSP tests count `rebuilds()`, which leaves out the private
+  views a transaction builds after its own hierarchy write; a `builds()` counter including them
+  would make "no resolution inside a GSP write" airtight.
+
+## 4. Dataset-level `stream()` does not infer
+
+`DatasetGraphRDFSLive.stream()` and `stream(g, s, p, o)` miss inferred quads, in read and write
+transactions alike: Jena's `DatasetGraphWithGraphTransform` does not override them, so they reach
+the stored dataset, while `find` infers. ARQ and Fuseki read with `find`, so no endpoint is
+affected; an embedded caller using `stream` is.
+
+First question: route `stream` to `find` in the live dataset, or report it upstream to Jena?
+
+## 5. Supply-chain pinning
 
 - `server/Dockerfile`'s build stage is `maven:3.9-eclipse-temurin-21` by tag; the runtime stage
   is pinned by digest. A digest for the build stage (Renovate can keep it current) makes the

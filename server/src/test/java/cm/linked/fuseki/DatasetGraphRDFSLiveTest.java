@@ -408,5 +408,7 @@ class DatasetGraphRDFSLiveTest {
         update(live, "DELETE DATA { :y a :b }");
         update(live, "COPY :h TO :h2");
         assertTrue(ask(stored, "ASK { GRAPH :h2 { :y a :b } }"), "COPY stores them too");
+        update(live, "MOVE :h TO :h3");
+        assertTrue(ask(stored, "ASK { GRAPH :h3 { :y a :b } }"), "MOVE stores them too");
     }
 }

@@ -15,14 +15,16 @@ import org.apache.jena.util.iterator.ExtendedIterator;
 
 /**
  * What a write transaction reads and takes graphs from before it has resolved its view: the
- * tracker, except that quad and triple matching ({@code find}, {@code contains}, {@code stream},
- * {@code size}) go to the inferred view, resolved only then. Graph handles write to the tracker's
+ * tracker, except that quad and triple matching ({@code find}, {@code contains} and the triple
+ * {@code stream} of a graph) go to the inferred view, resolved only then. Graph handles write to the tracker's
  * graphs, so a GSP POST, PUT or DELETE (which takes a graph, tests it for emptiness, clears it and
  * adds to it) never resolves the view inside its write transaction.
  * <p>
- * Emptiness, graph names and {@code containsGraph} are answered by the stored data: the view
- * infers from stored triples only and adds no axioms, so a graph or dataset is empty in the view
- * exactly when it is empty in the store, and the view holds the same graphs.
+ * Emptiness, sizes, graph names and {@code containsGraph} are answered by the stored data, as the
+ * view answers them too (Jena's RDFS graph takes them from its base graph): the view infers from
+ * stored triples only and adds no axioms, and holds the same graphs. Quad streams of the dataset
+ * go where the view sends them (Jena's view does not infer on them; queries read with
+ * {@code find}).
  */
 final class WriteTxnDataset extends DatasetGraphWrapper {
     private final Supplier<DatasetGraph> view;
@@ -84,16 +86,6 @@ final class WriteTxnDataset extends DatasetGraphWrapper {
     }
 
     @Override
-    public Stream<Quad> stream(Node g, Node s, Node p, Node o) {
-        return view.get().stream(g, s, p, o);
-    }
-
-    @Override
-    public Stream<Quad> stream() {
-        return view.get().stream();
-    }
-
-    @Override
     public boolean contains(Quad quad) {
         return view.get().contains(quad);
     }
@@ -103,7 +95,7 @@ final class WriteTxnDataset extends DatasetGraphWrapper {
         return view.get().contains(g, s, p, o);
     }
 
-    /** Writes, prefixes and emptiness on the tracker's graph; matching on the view's, resolved per call. */
+    /** Writes, prefixes, emptiness and size on the tracker's graph; matching on the view's, resolved per call. */
     private static final class LazyGraph extends GraphWrapper {
         private final Supplier<Graph> view;
 
@@ -135,16 +127,6 @@ final class WriteTxnDataset extends DatasetGraphWrapper {
         @Override
         public boolean contains(Triple t) {
             return view.get().contains(t);
-        }
-
-        @Override
-        public int size() {
-            return view.get().size();
-        }
-
-        @Override
-        public boolean isIsomorphicWith(Graph g) {
-            return view.get().isIsomorphicWith(g);
         }
     }
 }

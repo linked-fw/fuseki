@@ -48,7 +48,7 @@ measurements; the master edits them here before C1 and K1's store phase start.
   triples in the default graph. A commit that adds or removes one marks the hierarchy stale; the
   first transaction that reads afterwards rebuilds it once, inside that transaction (other readers
   wait for it), and each transaction keeps the hierarchy it first read with until it ends.
-  Write-only transactions never rebuild, so a burst of sync commits costs one rebuild, at the next
+  Write-only transactions (Graph Store Protocol `POST`/`PUT`/`DELETE` included) never rebuild, so a burst of sync commits costs one rebuild, at the next
   read. A transaction never reads with a hierarchy older than its snapshot (one that waited for
   the writer lock or began during a commit builds its own); it may read with a newer one when
   another transaction rebuilt after it began. A writer sees its own `subClassOf` change from its

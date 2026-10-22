@@ -15,13 +15,13 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: image-publish
-  cancel-in-progress: false
-
 jobs:
   publish:
     if: github.ref == 'refs/heads/main'
+    # On the job, so a skipped run on another ref never joins (or cancels) the queue.
+    concurrency:
+      group: image-publish
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
