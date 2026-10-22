@@ -13,7 +13,9 @@ variables:
   Trailing slashes are trimmed.
 - `FUSEKI_DATASET` (required): the dataset name (e.g. `cn-main`).
 - `FUSEKI_DEFAULT_GRAPH` (optional): a graph IRI to target; unset, factories fall back to
-  `process.env.DATA_ROOT`.
+  `process.env.DATA_ROOT`. On the image's inferring datasets, `rdfs:subClassOf` triples written
+  to a named graph are not part of the class hierarchy (only the default graph's are; see
+  [Datasets infer classes](#datasets-infer-classes)): write ontology data to the default graph.
 - `FUSEKI_USER`, `FUSEKI_PASSWORD` (optional): basic auth.
 
 Selects go to `/<ds>/sparql`, inserts and updates to `/<ds>/update`, graph reads and writes to
@@ -74,7 +76,8 @@ infers RDFS classes: with `ex:A rdfs:subClassOf ex:B` stored, every `ex:A` insta
   unchanged. A delete of an inferred triple is a no-op (the store does not hold it).
 - **The hierarchy follows the data, lazily.** A commit that writes or deletes a default-graph
   `rdfs:subClassOf` triple only marks the hierarchy stale. The first transaction that reads
-  afterwards rebuilds it once (readers starting meanwhile wait); write-only transactions never
+  afterwards rebuilds it once (readers starting meanwhile wait); write-only transactions,
+  Graph Store Protocol `POST`, `PUT` and `DELETE` on `/<ds>/data` included, never
   rebuild, so a burst of hundreds of ontology commits costs one rebuild (~20 ms for 800 classes,
   under 10 ms for schema.org's 952 axioms). A transaction keeps the hierarchy it first read with
   until it ends, and never reads with one older than its own snapshot (a transaction that waited
@@ -85,6 +88,10 @@ infers RDFS classes: with `ex:A rdfs:subClassOf ex:B` stored, every `ex:A` insta
   hierarchy from before its change (so one update request that inserts a `subClassOf` and then
   runs `DELETE WHERE { ?x a ex:Super }` matches without it), and with its change included only
   when the shared hierarchy was already stale at its first read.
+- **`ADD`, `COPY` and `MOVE` store inferred triples.** SPARQL Update's `ADD`, `COPY` and
+  `MOVE … TO DEFAULT` (or to any graph) read the source graph through the inferred view, so the
+  target receives the source's inferred triples as stored ones. To copy only what is stored, read
+  the source from `/<ds>/stored` and write that.
 - **Every write goes through the dataset.** Only writes through the `lf:DatasetRDFSLive` dataset
   (its service's endpoints) mark the hierarchy stale. A second service or assembler over the same
   TDB2 location, or a tool writing to the database files while the server runs, changes the data
