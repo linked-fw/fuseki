@@ -22,4 +22,5 @@ RUN chown -R 9008:0 /fuseki-base/templates /fuseki-base/configuration \
 USER 9008
 LABEL org.opencontainers.image.source="https://github.com/linked-fw/fuseki" \
       org.opencontainers.image.description="Apache Jena Fuseki 6.2.0 whose datasets infer RDFS classes, with stored-only reads" \
+      org.opencontainers.image.documentation="https://github.com/linked-fw/fuseki#what-the-image-adds-over-stock-fuseki" \
       org.opencontainers.image.licenses="Apache-2.0"

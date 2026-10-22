@@ -4,6 +4,30 @@ A store for `@_linked/core` that talks SPARQL over HTTP to Apache Jena Fuseki, d
 helpers, and the Fuseki **image** every linked app runs: `ghcr.io/linked-fw/fuseki`, whose datasets
 infer RDFS classes.
 
+## What the image adds over stock Fuseki
+
+1. **Live class inference on every dataset.** The dataset type `lf:DatasetRDFSLive` infers
+   `rdf:type` through `rdfs:subClassOf` at query time, over TDB2. Nothing inferred is written to
+   disk.
+2. **A hierarchy that rebuilds itself.** The class hierarchy is read from the stored
+   `rdfs:subClassOf` triples in the default graph and rebuilt once, at the first read after a
+   commit that changed one. Writes never rebuild (GSP writes included), so a burst of commits costs
+   one rebuild, and every transaction sees a hierarchy that matches its own snapshot.
+3. **Inference over every graph**, named graphs included.
+4. **Stored-only reads at `/<ds>/stored`**: SPARQL queries and graph reads over the stored triples
+   only, for backups, copies and counts. Writes there answer 405.
+5. **New datasets infer by default.** The admin form's template (`POST $/datasets`, `dbType=tdb2`)
+   is baked in and declares an inferring dataset; a template guard checks it at start.
+6. **SERVICE (federated queries) is off** server-wide.
+7. **Deleting a dataset removes its files.** Stock Fuseki leaves a wrapped dataset's TDB2 files
+   behind; the image removes them for datasets created through the admin API.
+8. **Fuseki 6.2**, with SHACL validation and the Lucene text index working over inferring datasets.
+9. **A published image**: `ghcr.io/linked-fw/fuseki:<jena version>-<n>`, multi-arch, immutable
+   tags published only from `main`, a digest-pinned base, running as a non-root user, configured
+   with the same environment variables as `secoresearch/fuseki`.
+
+Details follow in [The image](#the-image) and the sections after it.
+
 ## Fuseki store
 
 The `FusekiStore` sends SPARQL over HTTP to a Fuseki dataset. Configure it with environment
