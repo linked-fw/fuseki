@@ -1,0 +1,19 @@
+@prefix fuseki: <https://linked.cm/ont/fuseki/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix schema: <http://schema.org/> .
+
+fuseki:
+    a owl:Ontology ;
+    dcterms:description "Terms of the Apache Jena Fuseki store package."@en ;
+    dcterms:title "Linked Fuseki"@en ;
+    owl:versionInfo "3.4.2" .
+
+fuseki:FusekiStore
+    a owl:Class ;
+    rdfs:comment "A SPARQL dataset served by Apache Jena Fuseki, which the package's FusekiStore dataset class (not a shape) reads and writes over HTTP."@en ;
+    rdfs:label "Fuseki store"@en .
