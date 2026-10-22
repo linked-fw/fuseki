@@ -1,0 +1,45 @@
+# The measurement rig. Run with its own project: docker compose -p f1-probe -f server/probe/compose.yml ...
+# No named volumes: `down` leaves nothing behind. Never port 3030.
+services:
+  fuseki:
+    image: ${LF_IMAGE:-linked-fuseki:dev}
+    ports: ["${LF_PROBE_PORT:-3234}:3030"]
+    environment:
+      ADMIN_PASSWORD: probe
+      ENABLE_UPDATE: ${LF_ENABLE:-true}
+      ENABLE_DATA_WRITE: ${LF_ENABLE:-true}
+      ENABLE_SHACL: ${LF_ENABLE:-true}
+      JAVA_TOOL_OPTIONS: ${LF_JAVA_TOOL_OPTIONS:--Xmx1g}
+    volumes:
+      - ./text.ttl:/fuseki-base/configuration/text.ttl:ro
+      - ./plain.ttl:/fuseki-base/configuration/plain.ttl:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3030/$$/ping"]
+      interval: 1s
+      retries: 90
+  guard:
+    profiles: [guard]
+    image: ${LF_IMAGE:-linked-fuseki:dev}
+    ports: ["${LF_GUARD_PORT:-3235}:3030"]
+    environment:
+      ADMIN_PASSWORD: probe
+    volumes:
+      - ${LF_STOCK_TEMPLATE:-./stock-config-tdb2}:/fuseki-base/templates/config-tdb2
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3030/$$/ping"]
+      interval: 1s
+      retries: 90
+  bench:
+    profiles: [bench]
+    image: ${LF_IMAGE:-linked-fuseki:dev}
+    ports: ["${LF_BENCH_PORT:-3232}:3030"]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx4g
+    volumes:
+      - ${LF_BENCH_DIR:-./bench-data}:/bench
+      - ../bench/conf:/bench-conf:ro
+    command: ["java", "-cp", "*:/javalibs/*", "org.apache.jena.fuseki.main.cmds.FusekiServerCmd", "--config=/bench-conf/bench.ttl"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3030/bench/query?query=ASK%7B%7D"]
+      interval: 2s
+      retries: 150

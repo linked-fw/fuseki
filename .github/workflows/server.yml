@@ -1,0 +1,39 @@
+# Builds and tests the Fuseki module and its image on every push that touches server/.
+# Not a required check: it is path-filtered, and main's required check is `checks / Build & Test`.
+name: Server
+
+on:
+  push:
+    paths:
+      - 'server/**'
+      - '.github/workflows/server.yml'
+      - '.github/workflows/image.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+      - '.github/workflows/server.yml'
+      - '.github/workflows/image.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Version matches the image tag
+        run: |
+          tag=$(cat server/IMAGE_TAG)
+          version=$(mvn -B -q -f server help:evaluate -Dexpression=project.version -DforceStdout)
+          test "$tag" = "$version" || { echo "server/IMAGE_TAG ($tag) and the pom version ($version) differ"; exit 1; }
+      - run: mvn -B -f server verify
+      - run: docker build -t linked-fuseki:ci server
+      - run: server/scripts/smoke.sh linked-fuseki:ci
