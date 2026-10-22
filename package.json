@@ -58,10 +58,10 @@
     }
   },
   "dependencies": {
-    "@_linked/core": "^2.22.8"
+    "@_linked/core": "^2.37.1"
   },
   "devDependencies": {
-    "@_linked/cli": "^1.45.5",
+    "@_linked/cli": "^1.54.0",
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.0",
     "@jest/globals": "^30.0.0",
