@@ -11,7 +11,7 @@
  * From a sibling module the same import is ordinary and survives.
  */
 import * as terms from './fuseki.js';
-import {ns} from './fuseki.js';
+import {loadData, ns} from './fuseki.js';
 import {linkedOntology} from '../package.js';
 import {Prefix} from '@_linked/core/utils/Prefix';
 
@@ -24,4 +24,10 @@ import {Prefix} from '@_linked/core/utils/Prefix';
  */
 Prefix.add('lincd-fuseki', ns('').id);
 
-linkedOntology(terms, ns, 'fuseki');
+linkedOntology(
+  terms,
+  ns,
+  'fuseki',
+  loadData,
+  '../data/fuseki.json'
+);
