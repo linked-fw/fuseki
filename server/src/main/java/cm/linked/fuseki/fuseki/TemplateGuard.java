@@ -26,9 +26,10 @@ public final class TemplateGuard {
     private TemplateGuard() {}
 
     /**
-     * Applies the guard to the run area Fuseki uses: {@code $FUSEKI_BASE} (system property first,
-     * then the environment), else an existing {@code run} directory in the working directory (the
-     * image always sets {@code FUSEKI_BASE}). Without either there is no run area yet: nothing to
+     * Applies the guard to the run area Fuseki uses: {@code FUSEKI_BASE} read as Fuseki reads it,
+     * with {@code Lib.getenv} (the system property first, then the environment variable), else an
+     * existing {@code run} directory in the working directory (the image always sets
+     * {@code FUSEKI_BASE}). Without either there is no run area yet: nothing to
      * guard, which is logged.
      */
     public static Result ensure() {

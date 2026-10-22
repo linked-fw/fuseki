@@ -399,4 +399,14 @@ class DatasetGraphRDFSLiveTest {
         update(live, "INSERT DATA { :x a :a }");
         assertFalse(ask(live, "ASK { :x a :b }"));
     }
+
+    @Test
+    void addCopyMoveReadTheSourceThroughTheView() {
+        update(live, "INSERT DATA { :a rdfs:subClassOf :b . GRAPH :h { :y a :a } }");
+        update(live, "ADD :h TO DEFAULT");
+        assertTrue(ask(stored, "ASK { :y a :b }"), "ADD stores the source's inferred triples");
+        update(live, "DELETE DATA { :y a :b }");
+        update(live, "COPY :h TO :h2");
+        assertTrue(ask(stored, "ASK { GRAPH :h2 { :y a :b } }"), "COPY stores them too");
+    }
 }

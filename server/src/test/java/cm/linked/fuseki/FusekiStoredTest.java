@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 
 import cm.linked.fuseki.Http.Resp;
 import cm.linked.fuseki.fuseki.TemplateGuard;
+import cm.linked.fuseki.rdfs.DatasetGraphRDFSLive;
+import cm.linked.fuseki.rdfs.LiveDatasets;
 
 /** An embedded server configured from the bundled template, as the admin form would create it. */
 class FusekiStoredTest {
@@ -137,6 +139,67 @@ class FusekiStoredTest {
         assertEquals(2, send("PUT", base + "/data?default", "application/n-triples", null,
                              "<http://example.org/z> <http://example.org/p> \"1\" .").status() / 100);
         assertFalse(ask(base + "/sparql", "ASK { GRAPH :g { :x a :b } }"));
+    }
+
+    // ---- GSP writes never rebuild the hierarchy inside their own write transaction.
+
+    static final String AB = "<http://example.org/a> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/b> .";
+    static final String BC = "<http://example.org/b> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/c> .";
+
+    private static DatasetGraphRDFSLive live() {
+        return LiveDatasets.find(server.getDataAccessPointRegistry().get("/ds").getDataService().getDataset())
+            .orElseThrow(() -> new AssertionError("the service dataset is not live"));
+    }
+
+    private static int gsp(String method, String query, String body) {
+        return send(method, base + "/data?" + query, body == null ? null : "application/n-triples", null, body).status();
+    }
+
+    /** Instances in a named graph and a settled hierarchy; returns the rebuild count. */
+    private long settled() {
+        update(base + "/update", "INSERT DATA { GRAPH :g { :x a :a . :w a :b } }");
+        ask(base + "/sparql", "ASK { ?s ?p ?o }");
+        return live().rebuilds();
+    }
+
+    @Test
+    void gspPostRebuildsAtTheNextReadOnly() {
+        long rebuilds = settled();
+        long gen = live().generation();
+        assertEquals(2, gsp("POST", "default", AB) / 100);
+        assertEquals(2, gsp("POST", "default", BC) / 100);
+        assertEquals(2, gsp("POST", "graph=" + enc("http://example.org/h"), AB) / 100);
+        assertEquals(gen + 2, live().generation());
+        assertEquals(rebuilds, live().rebuilds(), "no rebuild inside a GSP POST");
+        assertTrue(ask(base + "/sparql", "ASK { GRAPH :g { :x a :c } }"));
+        assertEquals(rebuilds + 1, live().rebuilds(), "one rebuild, at the next read");
+    }
+
+    @Test
+    void gspPutRebuildsAtTheNextReadOnly() {
+        long rebuilds = settled();
+        assertEquals(2, gsp("PUT", "default", AB) / 100);
+        assertEquals(2, gsp("PUT", "default", BC) / 100);
+        assertEquals(2, gsp("PUT", "graph=" + enc("http://example.org/h"), AB) / 100);
+        assertEquals(rebuilds, live().rebuilds(), "no rebuild inside a GSP PUT");
+        // The second PUT replaced the first: b < c only.
+        assertFalse(ask(base + "/sparql", "ASK { GRAPH :g { :x a :b } }"));
+        assertTrue(ask(base + "/sparql", "ASK { GRAPH :g { :w a :c } }"));
+        assertEquals(rebuilds + 1, live().rebuilds(), "one rebuild, at the next read");
+    }
+
+    @Test
+    void gspDeleteRebuildsAtTheNextReadOnly() {
+        long rebuilds = settled();
+        assertEquals(2, gsp("POST", "default", AB) / 100);
+        assertEquals(2, gsp("POST", "graph=" + enc("http://example.org/h"), AB) / 100);
+        assertEquals(2, gsp("DELETE", "default", null) / 100);
+        assertEquals(2, gsp("DELETE", "graph=" + enc("http://example.org/h"), null) / 100);
+        assertEquals(404, gsp("DELETE", "graph=" + enc("http://example.org/h"), null));
+        assertEquals(rebuilds, live().rebuilds(), "no rebuild inside a GSP DELETE");
+        assertFalse(ask(base + "/sparql", "ASK { GRAPH :g { :x a :b } }"));
+        assertTrue(ask(base + "/sparql", "ASK { GRAPH :g { :x a :a } }"));
+        assertEquals(rebuilds + 1, live().rebuilds(), "one rebuild, at the next read");
     }
 
     @Test

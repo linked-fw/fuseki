@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.jena.graph.Graph;
+import org.apache.jena.graph.Node;
 import org.apache.jena.query.ReadWrite;
 import org.apache.jena.query.TxnType;
 import org.apache.jena.sparql.core.Transactional.Promote;
@@ -29,7 +30,8 @@ import org.slf4j.LoggerFactory;
  * generation. The first transaction that reads afterwards rebuilds the view once, inside itself
  * (so the rebuild reads exactly what that transaction sees); others reading meanwhile wait for
  * it. Writes do not need the view, so a burst of write-only commits costs one rebuild, at the
- * next read. A transaction never reads with a hierarchy older than its snapshot (one that waited
+ * next read; graph handles taken in a write transaction resolve it only when they are matched
+ * against, so GSP writes do not resolve it either. A transaction never reads with a hierarchy older than its snapshot (one that waited
  * for the writer lock, or began during a commit, builds its own view); it keeps the view it first
  * read with until it ends.
  */
@@ -61,6 +63,7 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
     private final AtomicLong pending = new AtomicLong(0);
     private final ReentrantLock rebuildLock = new ReentrantLock();
     private final ThreadLocal<TxnState> txn = new ThreadLocal<>();
+    private final WriteTxnDataset writeTxn;
     private volatile View current;
 
     private final AtomicLong rebuilds = new AtomicLong(0);
@@ -75,6 +78,7 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
         this.stored = stored;
         this.tracker = new SubClassOfTracker(stored);
         this.label = label;
+        this.writeTxn = new WriteTxnDataset(tracker, this, () -> view().dsg());
         this.current = Txn.calculateRead(stored, () -> build(0));
         LOG.info("[linked-fuseki] {}: hierarchy built ({} subClassOf, {} ms)", label, current.subClassOf(), lastRebuildMillis);
     }
@@ -111,6 +115,32 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
     @Override
     protected DatasetGraph get() {
         return view().dsg();
+    }
+
+    // A write transaction that has not read yet gets a dataset whose graphs write to the tracker
+    // and resolve the view only when matched: a GSP write takes a graph handle and must not cause
+    // a rebuild inside its write transaction.
+    @Override
+    protected DatasetGraph getR() {
+        return readTarget();
+    }
+
+    @Override
+    protected DatasetGraph getG() {
+        return readTarget();
+    }
+
+    private DatasetGraph readTarget() {
+        TxnState state = txn.get();
+        if ( state != null && state.view == null && stored.transactionMode() == ReadWrite.WRITE )
+            return writeTxn;
+        return view().dsg();
+    }
+
+    // The view holds the same graphs as the store: no view needed.
+    @Override
+    public boolean containsGraph(Node graphNode) {
+        return tracker.containsGraph(graphNode);
     }
 
     // Writes go to the tracker directly: they need no inference, and must not cause a rebuild.
