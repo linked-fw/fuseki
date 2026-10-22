@@ -403,3 +403,49 @@ sub-plan 001, then each round of fixes.
     delete the files of a store that is still open (rare).
   - Without `FUSEKI_BASE`, on the first start of a new `run/`, the template is not guarded (the
     image always sets `FUSEKI_BASE`).
+
+## Addendum: GSP writes keep the no-rebuild guarantee (CN plan 070, iteration 1)
+
+CN plan 070's review found that a GSP `POST`/`PUT`/`DELETE` carrying `rdfs:subClassOf` resolved
+the inferred view inside its write transaction (`getG()` handed out the view's graphs), so N such
+writes cost N rebuilds, against "write-only transactions never rebuild".
+
+- **Fix.** In a write transaction that has not read yet, `getR()`/`getG()` return
+  `WriteTxnDataset`: the tracker, whose graph handles (`LazyGraph`) write to the tracked graphs
+  and resolve the view only on `find`/`contains`/`stream`. Emptiness, sizes, graph names and
+  `containsGraph` come from the store, as Jena's view answers them too. `containsGraph` of the
+  live dataset always asks the tracker.
+- **Tests.** `FusekiStoredTest.gspPostRebuildsAtTheNextReadOnly`, `gspPutRebuildsAtTheNextReadOnly`,
+  `gspDeleteRebuildsAtTheNextReadOnly`: two or three GSP writes, then `rebuilds()` unchanged, then
+  the next read sees the new hierarchy with exactly one rebuild. Before the fix they failed:
+  `no rebuild inside a GSP POST ==> expected: <15> but was: <17>` (PUT 9/11, DELETE 19/21).
+  `addCopyMoveReadTheSourceThroughTheView` pins the README note that `ADD`/`COPY`/`MOVE` store the
+  source's inferred triples.
+- **Image probe** (port 3244, own container): three GSP `POST`s and a `PUT` on `?default` with
+  `subClassOf`, then `rebuilds before read: 0`; the next `ASK` answered `true` with
+  `hierarchy rebuilt (1 subClassOf, 0 ms, generation 4)`, the only rebuild line.
+- **Also:** `image.yml` publishes only on `refs/heads/main` (job `if`), concurrency group
+  `image-publish` on the job; README notes for `ADD`/`COPY`/`MOVE` and `FUSEKI_DEFAULT_GRAPH`; the
+  changeset lists the image's behaviour changes (minor); `TemplateGuard`'s comment names
+  `Lib.getenv`'s order (it already matched); the unfixed review lows are
+  [backlog 001](../backlog/001-store-inference-review-lows.md).
+
+**Gate** (after rebasing onto `store-inference` 6d4dfac):
+
+```
+mvn -B -f server verify        Tests run: 47, Failures: 0, Errors: 0, Skipped: 0   BUILD SUCCESS   real 17.96
+  FusekiStoredTest             Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.608 s
+  DatasetGraphRDFSLiveTest     Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.357 s
+docker build server            real 5.58
+smoke.sh (SMOKE_PORT=3243)     17 ok, 0 FAIL   smoke: 4 s
+linked build (integration CLI) ✔ Build successful   real 3.42
+npm test                       Test Suites: 3 passed, 3 total   Tests: 12 passed, 12 total   real 2.40
+```
+
+**Independent review** (opus, read-only) of the diff against plan 070 gap 1 and §Contracts §The
+image. Round 1: five lows (a non-main dispatch could cancel a queued main publish through the
+workflow-level group; backlog §1 understated the auto-promotion case; dataset `stream()` does not
+infer, pre-existing; `LazyGraph.size()` resolved the view needlessly; the tests miss private
+builds and `MOVE`), "Verdict: No open medium or high findings." All five taken up (fixed, or a
+backlog line). Round 2: "All five lows from round 1 are fixed, and nothing new appears at medium
+or high." — "Verdict: No open medium or high findings."
