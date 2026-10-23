@@ -63,7 +63,8 @@ public final class Hierarchy {
                 try {
                     while ( names.hasNext() ) {
                         Node g = names.next().getObject();
-                        if ( g.isURI() )
+                        // The default graph always feeds; the union graph would pull in every graph.
+                        if ( g.isURI() && !Quad.isDefaultGraph(g) && !Quad.isUnionGraph(g) )
                             graphs.add(g);
                     }
                 } finally {

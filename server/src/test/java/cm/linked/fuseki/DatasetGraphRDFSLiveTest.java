@@ -472,6 +472,15 @@ class DatasetGraphRDFSLiveTest {
     }
 
     @Test
+    void recordsNamingTheDefaultOrUnionGraphListNothing() {
+        update(live, RECORD_PREFIXES + "INSERT DATA { GRAPH " + REG + " { :u sd:name <urn:x-arq:UnionGraph> ; core:feedsHierarchy true . "
+            + ":d sd:name <urn:x-arq:DefaultGraph> ; core:feedsHierarchy true } }");
+        update(live, "INSERT DATA { GRAPH :draft { :a rdfs:subClassOf :b } . :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        assertTrue(live.listedGraphs().isEmpty());
+    }
+
+    @Test
     void aRecordWithoutANameListsNothing() {
         update(live, RECORD_PREFIXES + "INSERT DATA { GRAPH " + REG + " { :onto core:feedsHierarchy true } }");
         update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } . :x a :a }");
@@ -575,8 +584,11 @@ class DatasetGraphRDFSLiveTest {
         update(live, "INSERT DATA { :x a :a }");
         ask(live, "ASK { ?s ?p ?o }");
         update(live, record("onto", "true"));
-        // Write-only: the set from the last build does not list :onto yet.
+        // Write-only: the set from the last build does not list :onto yet, but the registry
+        // change makes it stale, so the write marks (the generation moves).
+        long before = live.generation();
         update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } }");
+        assertEquals(before + 1, live.generation(), "a write into a graph a pending record may list marks");
         Txn.executeWrite(live, () -> live.getGraph(ex("onto")).add(Triple.create(ex("b"), RDFS.Nodes.subClassOf, ex("c"))));
         assertTrue(ask(live, "ASK { :x a :c }"));
         // Once a build listed it, the set is current and unlisted graphs no longer mark.
