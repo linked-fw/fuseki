@@ -58,7 +58,7 @@
     }
   },
   "dependencies": {
-    "@_linked/core": "^2.37.1"
+    "@_linked/core": "^2.38.0"
   },
   "devDependencies": {
     "@_linked/cli": "^1.54.0",

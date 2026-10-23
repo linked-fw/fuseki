@@ -1,4 +1,5 @@
 import { SparqlDataset } from '@_linked/core/sparql/SparqlDataset';
+import { graphs } from '@_linked/core/ontologies/graphs';
 import type { SparqlJsonResults } from '@_linked/core/sparql/resultMapping';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -63,6 +64,18 @@ export class FusekiQueryError extends Error {
   }
 }
 
+/**
+ * Jena's names for the portable graph names: `graphs.default` is `urn:x-arq:DefaultGraph`,
+ * `graphs.union` is `urn:x-arq:UnionGraph` (every named graph, without the default graph). Any
+ * other IRI is a graph of its own and keeps its name. Used for reads only: a graph write to a
+ * portable name or to a `urn:x-arq:` name is refused by `SparqlDataset` before any SPARQL is built.
+ */
+export function jenaGraphName(iri: string): string | null {
+  if (iri === graphs.default) return 'urn:x-arq:DefaultGraph';
+  if (iri === graphs.union) return 'urn:x-arq:UnionGraph';
+  return iri;
+}
+
 export class FusekiStore extends SparqlDataset {
   private baseUrl: string;
   private dataset: string;
@@ -74,7 +87,10 @@ export class FusekiStore extends SparqlDataset {
   // with `string | {id?: string}` -- Shape's base constructor signature -- purely
   // to satisfy the @linkedShape decorator, which this class no longer carries.
   constructor(config?: FusekiStoreConfig) {
-    super();
+    // Jena reorders the patterns inside one GRAPH block, so a linked subject's inferred type
+    // check goes in a second block on the same graph variable (see core's `graphScope.ts`).
+    // Store-level by design: never set per query.
+    super({ isolateLinkedTypeChecks: true, mapGraphName: jenaGraphName });
     if (!config || typeof config === 'string' || !config.endpoint) {
       throw new Error(
         'FusekiStore: pass a FusekiStoreConfig object with at least { endpoint: "http://host:port/dataset" }.',
@@ -91,6 +107,14 @@ export class FusekiStore extends SparqlDataset {
         password: config.credentials.password,
       };
     }
+  }
+
+  /**
+   * One graph-registry cache entry per Fuseki dataset (`{baseUrl}/{dataset}`), shared by every
+   * store instance for it, so `invalidateGraphRegistry()` on any of them drops it for all.
+   */
+  protected override graphRegistryKey(): string {
+    return `${this.baseUrl}/${this.dataset.replace(/\/+$/, '')}`;
   }
 
   private static normalizeDatasetName(

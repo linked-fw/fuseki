@@ -7,7 +7,7 @@ summary: >
   writes on the default or a listed graph, graph-level writes); image `6.2.0-2`. F2:
   `FusekiStore` turns on `isolateLinkedTypeChecks` and maps the portable default and union graph
   names to Jena's. Supersedes sub-plan 001's graph text.
-status: Implementation (F1 done, F2 todo)
+status: Implementation (F1 done, F2 done)
 packages: [fuseki]
 ---
 
@@ -80,8 +80,8 @@ default graph's plus every graph the registry marks.
 ### `FusekiStore` (provider F2; consumers C1, C2, apps)
 
 `FusekiStore` sets `isolateLinkedTypeChecks: true` and maps `graphs.default` →
-`urn:x-arq:DefaultGraph`, `graphs.union` → `urn:x-arq:UnionGraph`. README: graphs, the registry,
-the image tag. `@_linked/fuseki`'s ontology data gains nothing.
+`urn:x-arq:DefaultGraph`, `graphs.union` → `urn:x-arq:UnionGraph`, and overrides
+`graphRegistryKey()` with its dataset identity. README: graphs, the registry, the image tag. `@_linked/fuseki`'s ontology data gains nothing.
 
 
 ### Reads with `.from()` and the generator (provider K2, extended by K4; consumers F2, C2, C4)
@@ -109,6 +109,22 @@ the image tag. `@_linked/fuseki`'s ontology data gains nothing.
   - writes never depend on the cache.
 - Test (core, `[fuseki]`): the same queries with `isolateLinkedTypeChecks` on and off return
   identical rows.
+- As landed (K2, core report 049): the cache key is the store's protected `graphRegistryKey()`;
+  F2's `FusekiStore` overrides it with its dataset identity and V1's push passes that same key.
+  On Jena, `FROM NAMED <urn:x-arq:DefaultGraph>` (and `UnionGraph`) matches nothing, while
+  `GRAPH <urn:x-arq:DefaultGraph>` alone and `VALUES ?g {…}` work; so for now `graphs.default`
+  or `graphs.union` together with other graphs is refused (`unsupported-query-kind`), and either
+  alone works. K4 lifts this with `VALUES` (core backlog 066). The select generator emits no type
+  check on a traversal's target today, so `isolateLinkedTypeChecks` changes no generated query yet;
+  K4 decides whether linked type checks are needed (core backlog 065).
+
+### Store-native graph names (provider K1, from plan 071 §Contracts "`graphQuery` and the graph API")
+
+- Store-native names are refused the same way as portable ones: `SparqlDataset` has a protected
+  hook `isReservedGraphName(iri): boolean`, checked on every graph write before any SPARQL is
+  built; the default refuses the `urn:x-arq:` prefix (Jena's `DefaultGraph`, `UnionGraph`), and a
+  store extends it (F2's `FusekiStore` keeps the default; another store adds its own names).
+  Decided 2026-10-23 on K1's review.
 
 
 ## F1 — the hierarchy from the registry (Java, image)
@@ -256,35 +272,69 @@ Plan 071 §F2, verbatim:
 > `linked-fuseki:071` that a `.from(graphs.union)` select returns a named-graph triple.
 >
 
+### Design (inside the contract)
+
+- **Options:** the constructor passes `{isolateLinkedTypeChecks: true, mapGraphName:
+  jenaGraphName}` to `SparqlDataset`. Store-level only: `FusekiStoreConfig` gains no field for it
+  (decision 9: set on the store, never per query; a store that must not reorder is another class).
+- **`jenaGraphName(iri)`** (exported): `graphs.default` → `urn:x-arq:DefaultGraph`, `graphs.union`
+  → `urn:x-arq:UnionGraph`, every other IRI unchanged. Core calls it only for the two portable
+  names today (`graphs.allOntologies`/`allShapes` are expanded from the registry first; the default
+  graph alone is read without `GRAPH`); the identity for other IRIs keeps it right if K4 maps every
+  name.
+- **`graphRegistryKey()`** returns `{baseUrl}/{dataset}` (the dataset endpoint without a trailing
+  slash, as core's test store does), so every `FusekiStore` (and CN's `AppDataFusekiStore`) for one
+  dataset shares one registry cache entry, and `invalidateGraphRegistry()` on any of them drops it.
+- **`isReservedGraphName`** is not overridden: core's default refuses `urn:x-arq:*` writes
+  (`graph-name-read-only`) before any SPARQL is built; a unit test pins it for this store.
+
 ### Files
 
 | File | Change |
 |---|---|
-| `src/shapes/FusekiStore.ts` | pass `{isolateLinkedTypeChecks: true, mapGraphName}` to `SparqlDataset` (K2's `SparqlOptions`); `mapGraphName`: `graphs.default` → `urn:x-arq:DefaultGraph`, `graphs.union` → `urn:x-arq:UnionGraph`, every other IRI unchanged (`graphs.allOntologies` is expanded by core before mapping) |
-| `src/shapes/FusekiStore.graphs.test.ts` (new) | the mapping, and the option set |
-| a live test (gated on a running `linked-fuseki:071`, port 3177) | a `.from(graphs.union)` select returns a named-graph triple |
-| `README.md` | graphs, the registry, the image tag `6.2.0-2` |
-| `.changeset/*.md` | minor; lists "requires `ghcr.io/linked-fw/fuseki:6.2.0-2`" |
+| `src/shapes/FusekiStore.ts` | options as above; `jenaGraphName`; `graphRegistryKey()` override |
+| `src/shapes/FusekiStore.graphs.test.ts` (new) | the mapping, the option, the registry key (two instances for one endpoint share it; another dataset does not), `urn:x-arq:*` and portable-name writes refused without a request |
+| `src/shapes/FusekiStore.graphs.live.test.ts` (new) | live, skipped unless `FUSEKI_LIVE_URL` and `FUSEKI_LIVE_ADMIN_PASSWORD` are set: on its own dataset, `.from(graphs.union)` returns a named-graph triple; `.from(graphs.default)` alone returns the default graph's data only; `.from(OntologyGraph.iriFor(pkg))` returns that graph's data; `graphs.allOntologies` lists it; a `subClassOf` in the registered graph infers (image `6.2.0-2`) |
+| `README.md` | §Fuseki store: reads from graphs (`.from()`, the name mapping, the option, the registry cache key, refused names), image `6.2.0-2` required |
+| `.changeset/*.md` | minor; lists the breaking changes |
 
 ### Pitfalls
 
 - **`graphs.union` excludes the default graph** on Jena and must never be written: core refuses
   writes to portable names (`graph-name-read-only`); the mapping is for reads.
+- `graphs.default` or `graphs.union` together with other graphs is refused by core until K4
+  (backlog 066); the live test reads each alone.
 - `@_linked/fuseki`'s ontology data (`src/data/fuseki.ttl`) gains nothing.
 - The option is store-level (constructor), never per query.
-- Built against K2's core: rebase on the landed core and check `npx linked doctor resolve` shows
-  core as the integration build before testing.
+- Built against K2's core: `npx linked doctor resolve` must show core from the main checkout's
+  integration build (K2 landed, `lib/` built) before testing.
+- The live test uses its own Fuseki (port 3177, compose project `fuseki-071-f2`, image
+  `linked-fuseki:071`) and its own dataset, deleted after the run; never 3030 or 3939.
 
 ### Tests
 
-`npx linked build && npm test`; the live test on `linked-fuseki:071` (own container on 3177).
+`npx linked build && npm test` (unit; the live file skips without its env); then with
+`FUSEKI_LIVE_URL=http://localhost:3177 FUSEKI_LIVE_ADMIN_PASSWORD=…` exported, `npm test` again
+runs the live file on `linked-fuseki:071`.
+
+### Gates
+
+- Quick: `npm test`.
+- Full (before landing): `mvn -B -f server verify`; `docker build -t linked-fuseki:071-f2 server`
+  (F2 changes nothing in `server/`, so the build must give `linked-fuseki:071`'s image id; the
+  `071` tag the owner's store runs is not retagged); `SMOKE_PORT=3177 server/scripts/smoke.sh
+  linked-fuseki:071-f2`; `npx linked build && npm test` with the live env exported.
+
+### Phases
+
+1. `FusekiStore` options, mapping and key; unit and live tests; README; changeset; report 003.
 
 ## Progress
 
 | Step | Status | Notes |
 |---|---|---|
 | F1 | done | report 002 |
-| F2 | todo | after K2 |
+| F2 | done | report 003 |
 
 ## Outcome (F1)
 
@@ -302,3 +352,17 @@ gates with timings, the bench with 20 listed graphs, the review).
 - **Deviations:** every graph handle wrapped; the stale rule; default/union graph names in records
   ignored (report 002 §Deviations). Contracts unchanged.
 - **Follow-ups:** F2; image publish at R1.
+
+## Outcome (F2)
+
+Record: [report 003](../reports/003-fuseki-store-reads-from-graphs.md).
+
+- **Changed:** `FusekiStore` (`isolateLinkedTypeChecks: true`, `mapGraphName: jenaGraphName`,
+  `graphRegistryKey()` = `{baseUrl}/{dataset}`); unit tests (10) and a live test (5); README
+  §Reads from graphs; minor changeset with breaking changes.
+- **Verification:** `mvn -B -f server verify` 63 tests BUILD SUCCESS (17.5 s); image build gives
+  `linked-fuseki:071`'s id; smoke 24 ok (7 s); `npx linked build && npm test` with the live env 26
+  tests (10.6 s).
+- **Deviations:** `jenaGraphName` keeps other IRIs (core's test store returns `null`); the live
+  test also covers `graphs.allOntologies` and the shared key. Contracts unchanged.
+- **Follow-ups:** core range raised at R1; default/union in a set: core backlog 066.
