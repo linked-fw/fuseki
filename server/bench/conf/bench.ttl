@@ -1,5 +1,7 @@
 # Three services over one TDB2 database (loaded offline with tdb2.tdbloader, hierarchy included):
 # bench (lf:DatasetRDFSLive), bench-stock (Jena's ja:DatasetRDFS with a fixed schema), bench-plain.
+# bench-listed: lf:DatasetRDFSLive over a second database with the same instances and the hierarchy
+# split over named graphs the graph registry lists (gen.py's listed.nq), none in the default graph.
 PREFIX fuseki: <http://jena.apache.org/fuseki#>
 PREFIX rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX ja:     <http://jena.hpl.hp.com/2005/11/Assembler#>
@@ -9,6 +11,8 @@ PREFIX :       <#>
 
 :tdb   rdf:type tdb2:DatasetTDB2 ; tdb2:location "/bench/db/main" .
 :live  rdf:type lf:DatasetRDFSLive ; ja:dataset :tdb .
+:tdbListed rdf:type tdb2:DatasetTDB2 ; tdb2:location "/bench/db/listed" .
+:listed rdf:type lf:DatasetRDFSLive ; ja:dataset :tdbListed .
 :stock rdf:type ja:DatasetRDFS ; ja:dataset :tdb ; ja:rdfsSchema <file:///bench/data/hierarchy.nt> .
 
 :svcLive rdf:type fuseki:Service ; fuseki:name "bench" ;
@@ -24,3 +28,8 @@ PREFIX :       <#>
   fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "query" ] ;
   fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
   fuseki:dataset :tdb .
+:svcListed rdf:type fuseki:Service ; fuseki:name "bench-listed" ;
+  fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "query" ] ;
+  fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
+  fuseki:endpoint [ fuseki:operation lf:stored ; fuseki:name "stored" ] ;
+  fuseki:dataset :listed .

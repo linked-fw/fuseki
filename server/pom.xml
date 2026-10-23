@@ -6,7 +6,7 @@
 
   <groupId>cm.linked</groupId>
   <artifactId>linked-fuseki-module</artifactId>
-  <version>6.2.0-1</version>
+  <version>6.2.0-2</version>
   <packaging>jar</packaging>
   <name>Linked Fuseki module</name>
   <description>Fuseki module: datasets that infer RDFS classes over TDB2, and stored-only reads.</description>

@@ -58,13 +58,18 @@ for (const svc of SERVICES) {
   console.log(['Q8 DELETE DATA', svc, 'cold', f(del[0]), 'med', f(b.med), 'p90', f(b.p90)].join('\t'));
 }
 
-// A hierarchy change mid-run: a new subclass of Thing with one instance.
+// A hierarchy change mid-run: a new subclass of Thing with one instance. BENCH_HSVC picks the
+// service (default bench); BENCH_HGRAPH writes the axiom into that graph instead of the default
+// graph (for bench-listed: one of the listed graphs).
+const HSVC = process.env.BENCH_HSVC ?? 'bench';
+const HG = process.env.BENCH_HGRAPH;
+const inG = t => (HG ? `GRAPH <${HG}> { ${t} }` : t);
 const N = '<http://example.org/NewKind>', NI = '<http://example.org/d/newkind/1>';
-await upd('bench', `INSERT DATA { ${N} rdfs:subClassOf schema:Thing . ${NI} a ${N} }`);
-let r = await run('bench', `ASK { ${NI} a schema:Thing }`);
-console.log(['H1 after subClassOf insert: ASK new instance a Thing', 'bench', 'first query ms', f(r.ms), r.n].join('\t'));
-r = await run('bench', `SELECT (COUNT(DISTINCT ?s) AS ?c) { ?s a schema:Thing }`);
-console.log(['H2 count Thing after the change', 'bench', 'ms', f(r.ms), r.n].join('\t'));
-await upd('bench', `DELETE DATA { ${N} rdfs:subClassOf schema:Thing . ${NI} a ${N} }`);
-r = await run('bench', `ASK { ${NI} a schema:Thing }`);
-console.log(['H3 after delete: ASK', 'bench', 'first query ms', f(r.ms), r.n].join('\t'));
+await upd(HSVC, `INSERT DATA { ${inG(`${N} rdfs:subClassOf schema:Thing .`)} ${NI} a ${N} }`);
+let r = await run(HSVC, `ASK { ${NI} a schema:Thing }`);
+console.log(['H1 after subClassOf insert: ASK new instance a Thing', HSVC, 'first query ms', f(r.ms), r.n].join('\t'));
+r = await run(HSVC, `SELECT (COUNT(DISTINCT ?s) AS ?c) { ?s a schema:Thing }`);
+console.log(['H2 count Thing after the change', HSVC, 'ms', f(r.ms), r.n].join('\t'));
+await upd(HSVC, `DELETE DATA { ${inG(`${N} rdfs:subClassOf schema:Thing .`)} ${NI} a ${N} }`);
+r = await run(HSVC, `ASK { ${NI} a schema:Thing }`);
+console.log(['H3 after delete: ASK', HSVC, 'first query ms', f(r.ms), r.n].join('\t'));

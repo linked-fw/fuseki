@@ -161,10 +161,22 @@ if [ -n "${LF_BENCH_DATA:-}" ] && [ -f "$LF_BENCH_DATA/instances.nt" ]; then
     -cp '/jena-fuseki/fuseki-server.jar:/javalibs/*' tdb2.tdbloader --loc /bench/db/main \
     /bench/data/instances.nt /bench/data/named.nq >/dev/null 2>&1
   t1=$(ms)
+  # The registry variant (bench-listed): the hierarchy in listed named graphs only.
+  if [ -f "$LF_BENCH_DATA/listed.nq" ]; then
+    cp "$LF_BENCH_DATA"/instances-only.nt "$LF_BENCH_DATA"/listed.nq "$LF_BENCH_DIR/data/"
+    docker run --rm -v "$LF_BENCH_DIR:/bench" --entrypoint java "${LF_IMAGE:-linked-fuseki:dev}" \
+      -cp '/jena-fuseki/fuseki-server.jar:/javalibs/*' tdb2.tdbloader --loc /bench/db/listed \
+      /bench/data/instances-only.nt /bench/data/named.nq /bench/data/listed.nq >/dev/null 2>&1
+    t1=$(ms)
+  fi
   up bench
   t2=$(ms)
   echo "M10 bench: load $((t1-t0)) ms; start $((t2-t1)) ms; $(logs bench | grep 'hierarchy built' | sed 's/.*\[linked-fuseki\]/[linked-fuseki]/')"
   BENCH_URL="http://localhost:${LF_BENCH_PORT:-3232}" node ../bench/bench.mjs | sed 's/^/M10 /'
+  if [ -f "$LF_BENCH_DATA/listed.nq" ]; then
+    BENCH_SERVICES=bench-listed,bench BENCH_HSVC=bench-listed BENCH_HGRAPH=http://example.org/graph/onto1 \
+      BENCH_URL="http://localhost:${LF_BENCH_PORT:-3232}" node ../bench/bench.mjs | sed 's/^/M10L /'
+  fi
   if [ -n "${LF_BENCH_REVERSED:-}" ]; then
     BENCH_SERVICES=bench-plain,bench-stock,bench BENCH_URL="http://localhost:${LF_BENCH_PORT:-3232}" node ../bench/bench.mjs | grep "^Q[0-9]" | sed 's/^/M10r /'
   fi

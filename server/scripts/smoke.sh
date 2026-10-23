@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke test of the image: a form-created dataset infers, /stored reads stored triples only,
-# a quads POST marks the hierarchy, SERVICE is refused, `ds` infers and validates with SHACL,
-# and a delete removes the dataset's files.
+# a quads POST marks the hierarchy, a graph the registry lists feeds it (an unlisted one does
+# not), SERVICE is refused, `ds` infers and validates with SHACL, and a delete removes the
+# dataset's files.
 # Usage: server/scripts/smoke.sh <image>   (port: SMOKE_PORT, default 3233)
 set -euo pipefail
 IMAGE="${1:?usage: smoke.sh <image>}"
@@ -52,6 +53,22 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/n-qu
   --data-binary '<http://example.org/B> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/C> .' "$URL/smoke")
 check "quads POST to the dataset URL" "$code" 200
 check "the POST changed the hierarchy" "$(ask "$URL/smoke/sparql" 'ASK { :a a :C }')" true
+
+REG='<https://linked.cm/pkg/core/graph/registry>'
+RECORD="GRAPH $REG { :onto <http://www.w3.org/ns/sparql-service-description#name> :onto ; <https://linked.cm/ont/core/feedsHierarchy> true }"
+upd "$URL/smoke/update" 'INSERT DATA { :D rdfs:subClassOf :E . :d a :D . GRAPH :onto { :F rdfs:subClassOf :G } GRAPH :draft { :F rdfs:subClassOf :H } :f a :F }' >/dev/null
+check "an unlisted graph does not feed the hierarchy" "$(ask "$URL/smoke/sparql" 'ASK { :f a :G }')" false
+upd "$URL/smoke/update" "INSERT DATA { $RECORD }" >/dev/null
+check "a graph the registry lists feeds the hierarchy" "$(ask "$URL/smoke/sparql" 'ASK { :f a :G }')" true
+check "the unlisted graph still does not" "$(ask "$URL/smoke/sparql" 'ASK { :f a :H }')" false
+check "the default graph still feeds" "$(ask "$URL/smoke/sparql" 'ASK { :d a :E }')" true
+code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: application/n-triples' \
+  --data-binary '<http://example.org/F> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://example.org/K> .' \
+  "$URL/smoke/data?graph=$(printf %s 'http://example.org/onto' | sed 's/:/%3A/g; s,/,%2F,g')")
+check "GSP PUT on the listed graph" "$code" 200
+check "the PUT replaced its hierarchy" "$(ask "$URL/smoke/sparql" 'ASK { :f a :K }') $(ask "$URL/smoke/sparql" 'ASK { :f a :G }')" "true false"
+n=$(docker logs "$NAME" 2>&1 | grep -c 'hierarchy rebuilt (.* 1 graphs,' || true)
+if [ "$n" -gt 0 ]; then pass "the rebuild logs the listed graph count"; else fail "no rebuild log with '1 graphs'"; fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' --data-urlencode 'query=SELECT * { SERVICE <http://example.org/sparql> { ?s ?p ?o } }' "$URL/smoke/sparql")
 check "SERVICE refused" "$code" 422
