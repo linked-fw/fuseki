@@ -67,8 +67,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H 'Content-Type: applicati
   "$URL/smoke/data?graph=$(printf %s 'http://example.org/onto' | sed 's/:/%3A/g; s,/,%2F,g')")
 check "GSP PUT on the listed graph" "$code" 200
 check "the PUT replaced its hierarchy" "$(ask "$URL/smoke/sparql" 'ASK { :f a :K }') $(ask "$URL/smoke/sparql" 'ASK { :f a :G }')" "true false"
-docker logs "$NAME" 2>&1 | grep -q 'hierarchy rebuilt (.* 1 graphs,' \
-  && pass "the rebuild logs the listed graph count" || fail "no rebuild log with '1 graphs'"
+n=$(docker logs "$NAME" 2>&1 | grep -c 'hierarchy rebuilt (.* 1 graphs,' || true)
+if [ "$n" -gt 0 ]; then pass "the rebuild logs the listed graph count"; else fail "no rebuild log with '1 graphs'"; fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' --data-urlencode 'query=SELECT * { SERVICE <http://example.org/sparql> { ?s ?p ?o } }' "$URL/smoke/sparql")
 check "SERVICE refused" "$code" 422

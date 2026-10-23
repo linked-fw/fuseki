@@ -1,6 +1,8 @@
 # Generates the ~1M-triple benchmark data from schema.org's class hierarchy.
-# Usage: python3 gen.py <dir with schema.json and schema-added.json> [instances] [named-graph instances]
-# Writes data/hierarchy.nt, data/instances.nt (hierarchy included) and data/named.nq next to this file.
+# Usage: python3 gen.py <dir with schema.json and schema-added.json> [instances] [named-graph instances] [listed graphs]
+# Writes data/hierarchy.nt, data/instances.nt (hierarchy included) and data/named.nq next to this file,
+# and for the registry variant data/instances-only.nt (no hierarchy) and data/listed.nq: the hierarchy
+# split over [listed graphs] (default 20) named graphs, each with its record in the graph registry.
 import json, random, sys, os
 random.seed(42)
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -85,3 +87,17 @@ tot = 0
 with open(f'{OUT}/named.nq', 'w') as w:
     for i, c in inst[N:]: tot += emit(w, i, c, ' <http://example.org/graph/ng1>')
 print('named-graph triples', tot, 'instances', NG)
+K = int(sys.argv[4]) if len(sys.argv) > 4 else 20
+REG = '<https://linked.cm/pkg/core/graph/registry>'
+with open(f'{OUT}/instances.nt') as r, open(f'{OUT}/instances-only.nt', 'w') as w:
+    for n, line in enumerate(r):
+        if n >= len(sub): w.write(line)
+with open(f'{OUT}/listed.nq', 'w') as w:
+    for k in range(1, K + 1):
+        g = f'<http://example.org/graph/onto{k}>'
+        w.write(f'{g} <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://linked.cm/ont/core/OntologyGraph> {REG} .\n')
+        w.write(f'{g} <http://www.w3.org/ns/sparql-service-description#name> {g} {REG} .\n')
+        w.write(f'{g} <https://linked.cm/ont/core/feedsHierarchy> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> {REG} .\n')
+    for n, (a, b) in enumerate(sorted(sub)):
+        w.write(f'<{a}> {SUB} <{b}> <http://example.org/graph/onto{n % K + 1}> .\n')
+print('listed graphs', K, 'subClassOf triples spread over them', len(sub))
