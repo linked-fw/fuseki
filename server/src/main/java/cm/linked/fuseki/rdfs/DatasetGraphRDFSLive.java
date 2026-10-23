@@ -1,9 +1,9 @@
 package cm.linked.fuseki.rdfs;
 
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.jena.graph.Graph;
 import org.apache.jena.graph.Node;
 import org.apache.jena.query.ReadWrite;
 import org.apache.jena.query.TxnType;
@@ -21,12 +21,14 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Jena's query-time RDFS view ({@link DatasetGraphRDFS}) over a stored dataset (normally TDB2),
- * whose class hierarchy follows the stored {@code rdfs:subClassOf} triples of the default graph.
+ * whose class hierarchy follows the stored {@code rdfs:subClassOf} triples of the default graph
+ * and of every graph the graph registry lists as a hierarchy source ({@link Hierarchy}).
  * <p>
  * Reads infer over every graph; writes pass to the stored dataset unchanged (a delete of an
  * inferred triple reaches the store, which does not hold it: a no-op). Nothing is materialized.
  * <p>
- * A commit that wrote or deleted a default-graph {@code rdfs:subClassOf} triple only bumps the
+ * A commit that may have changed the hierarchy (a {@code rdfs:subClassOf} write on the default
+ * graph or a listed graph, any registry write; see {@link SubClassOfTracker}) only bumps the
  * generation. The first transaction that reads afterwards rebuilds the view once, inside itself
  * (so the rebuild reads exactly what that transaction sees); others reading meanwhile wait for
  * it. Writes do not need the view, so a burst of write-only commits costs one rebuild, at the
@@ -39,7 +41,7 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
     private static final Logger LOG = LoggerFactory.getLogger("cm.linked.fuseki");
 
     /** A view and the generation of the stored hierarchy it reflects (at least). */
-    private record View(DatasetGraphRDFS dsg, long generation, long subClassOf) {}
+    private record View(DatasetGraphRDFS dsg, long generation, long subClassOf, Set<Node> graphs) {}
 
     /**
      * Per-thread transaction state. {@code completed}: the generation read before begin (every
@@ -80,7 +82,9 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
         this.label = label;
         this.writeTxn = new WriteTxnDataset(tracker, this, () -> view().dsg());
         this.current = Txn.calculateRead(stored, () -> build(0));
-        LOG.info("[linked-fuseki] {}: hierarchy built ({} subClassOf, {} ms)", label, current.subClassOf(), lastRebuildMillis);
+        tracker.published(current.graphs(), current.generation());
+        LOG.info("[linked-fuseki] {}: hierarchy built ({} subClassOf, {} graphs, {} ms)",
+                 label, current.subClassOf(), current.graphs().size(), lastRebuildMillis);
     }
 
     /** The stored dataset (no inference). */
@@ -105,6 +109,11 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
     /** The generation the latest view was built for. */
     public long viewGeneration() {
         return current.generation();
+    }
+
+    /** The graphs the registry listed at the latest view's build (the default graph not included). */
+    public Set<Node> listedGraphs() {
+        return current.graphs();
     }
 
     public String label() {
@@ -187,9 +196,10 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
             View built = build(state.completed);
             if ( built.generation() > v.generation() ) {
                 current = built;
+                tracker.published(built.graphs(), built.generation());
                 rebuilds.incrementAndGet();
-                LOG.info("[linked-fuseki] {}: hierarchy rebuilt ({} subClassOf, {} ms, generation {})",
-                         label, built.subClassOf(), lastRebuildMillis, built.generation());
+                LOG.info("[linked-fuseki] {}: hierarchy rebuilt ({} subClassOf, {} graphs, {} ms, generation {})",
+                         label, built.subClassOf(), built.graphs().size(), lastRebuildMillis, built.generation());
             }
             return built;
         } finally {
@@ -199,9 +209,9 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
 
     private View build(long gen) {
         long start = System.nanoTime();
-        Graph vocab = Hierarchy.read(stored);
-        SetupRDFS setup = Hierarchy.setup(vocab);
-        View view = new View(new DatasetGraphRDFS(tracker, setup, getContext()), gen, vocab.size());
+        Hierarchy.Read read = Hierarchy.read(stored);
+        SetupRDFS setup = Hierarchy.setup(read.vocab());
+        View view = new View(new DatasetGraphRDFS(tracker, setup, getContext()), gen, read.vocab().size(), read.graphs());
         lastRebuildMillis = (System.nanoTime() - start) / 1_000_000;
         return view;
     }
@@ -263,9 +273,14 @@ public class DatasetGraphRDFSLive extends DatasetGraphWrapper implements Dataset
 
     @Override
     public void commit() {
-        boolean touched = tracker.takeTouched();
-        if ( touched )
-            pending.incrementAndGet();
+        int marks = tracker.takeMarks();
+        boolean touched = marks != 0;
+        if ( touched ) {
+            long commit = pending.incrementAndGet();
+            // Before TDB2's commit releases the writer lock: the next writer sees it.
+            if ( (marks & SubClassOfTracker.REGISTRY) != 0 )
+                tracker.registryCommitted(commit);
+        }
         try {
             stored.commit();
         } finally {

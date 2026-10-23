@@ -400,6 +400,228 @@ class DatasetGraphRDFSLiveTest {
         assertFalse(ask(live, "ASK { :x a :b }"));
     }
 
+    // ---- Graphs the registry lists feed the hierarchy.
+
+    static final String REG = "<https://linked.cm/pkg/core/graph/registry>";
+    static final String RECORD_PREFIXES = """
+        PREFIX core: <https://linked.cm/ont/core/>
+        PREFIX sd:   <http://www.w3.org/ns/sparql-service-description#>
+        PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+        """;
+
+    /** The registry record of graph {@code g} (local name), with {@code core:feedsHierarchy feeds}. */
+    static String record(String g, String feeds) {
+        return RECORD_PREFIXES + "INSERT DATA { GRAPH " + REG + " { :" + g + " a core:OntologyGraph ; sd:name :" + g
+            + " ; core:feedsHierarchy " + feeds + " } }";
+    }
+
+    static String dropRecord(String g) {
+        return "DELETE WHERE { GRAPH " + REG + " { :" + g + " ?p ?o } }";
+    }
+
+    @Test
+    void aListedGraphFeedsTheHierarchy() {
+        update(live, record("onto", "true"));
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b . :b rdfs:subClassOf :c } }");
+        update(live, "INSERT DATA { :x a :a . GRAPH :data { :y a :a } }");
+        assertTrue(ask(live, "ASK { :x a :c }"), "default-graph instances");
+        assertTrue(ask(live, "ASK { GRAPH :data { :y a :b } }"), "instances in another graph");
+        assertEquals(java.util.Set.of(ex("onto")), live.listedGraphs());
+    }
+
+    @Test
+    void anUnlistedGraphDoesNotFeedNorRebuild() {
+        update(live, "INSERT DATA { :x a :a }");
+        ask(live, "ASK { ?s ?p ?o }");
+        long rebuilds = live.rebuilds();
+        long gen = live.generation();
+        update(live, "INSERT DATA { GRAPH :draft { :a rdfs:subClassOf :b } }");
+        Txn.executeWrite(live, () -> live.getGraph(ex("draft")).add(Triple.create(ex("a"), RDFS.Nodes.subClassOf, ex("c"))));
+        update(live, "DROP GRAPH :draft");
+        update(live, "INSERT DATA { GRAPH :draft { :a rdfs:subClassOf :b } }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        assertEquals(gen, live.generation());
+        assertEquals(rebuilds, live.rebuilds());
+    }
+
+    @Test
+    void aGraphWrittenBeforeItsRecordFeedsOnceTheRecordIsWritten() {
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } . :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        update(live, record("onto", "true"));
+        assertTrue(ask(live, "ASK { :x a :b }"));
+    }
+
+    @Test
+    void feedsHierarchyFalseDoesNotFeed() {
+        update(live, record("drafts", "false"));
+        update(live, "INSERT DATA { GRAPH :drafts { :a rdfs:subClassOf :b } . :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        // Flipping the flag lists the graph.
+        update(live, RECORD_PREFIXES + "DELETE { GRAPH " + REG + " { :drafts core:feedsHierarchy false } } "
+            + "INSERT { GRAPH " + REG + " { :drafts core:feedsHierarchy true } } WHERE {}");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        // A literal that is not an xsd:boolean true does not count.
+        update(live, dropRecord("drafts"));
+        update(live, RECORD_PREFIXES + "INSERT DATA { GRAPH " + REG + " { :drafts sd:name :drafts ; core:feedsHierarchy 'true' } }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        // "1"^^xsd:boolean is true.
+        update(live, dropRecord("drafts"));
+        update(live, RECORD_PREFIXES + "INSERT DATA { GRAPH " + REG + " { :drafts sd:name :drafts ; core:feedsHierarchy '1'^^xsd:boolean } }");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+    }
+
+    @Test
+    void aRecordWithoutANameListsNothing() {
+        update(live, RECORD_PREFIXES + "INSERT DATA { GRAPH " + REG + " { :onto core:feedsHierarchy true } }");
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } . :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        assertTrue(live.listedGraphs().isEmpty());
+    }
+
+    @Test
+    void subClassOfWritesOnAListedGraphMark() {
+        update(live, record("onto", "true"));
+        update(live, "INSERT DATA { :x a :a }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } }");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, "DELETE DATA { GRAPH :onto { :a rdfs:subClassOf :b } }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } }");
+        update(live, "DELETE WHERE { GRAPH :onto { ?s rdfs:subClassOf ?o } }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        // Other predicates on a listed graph do not rebuild.
+        long rebuilds = live.rebuilds();
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:label 'A' } }");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        assertEquals(rebuilds, live.rebuilds());
+    }
+
+    @Test
+    void graphLevelWritesOnAListedGraph() {
+        update(live, record("onto", "true"));
+        update(live, "INSERT DATA { :x a :a }");
+        ask(live, "ASK { ?s ?p ?o }");
+        Node onto = ex("onto");
+        // As GSP PUT/POST/DELETE on ?graph= do: through the dataset's graph handle.
+        Txn.executeWrite(live, () -> live.getGraph(onto).add(Triple.create(ex("a"), RDFS.Nodes.subClassOf, ex("b"))));
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        Txn.executeWrite(live, () -> live.getGraph(onto).clear());
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        Txn.executeWrite(live, () -> live.getGraph(onto).add(Triple.create(ex("a"), RDFS.Nodes.subClassOf, ex("b"))));
+        Txn.executeWrite(live, () -> live.getGraph(onto).remove(Node.ANY, RDFS.Nodes.subClassOf, Node.ANY));
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        Graph g = org.apache.jena.graph.GraphMemFactory.createDefaultGraph();
+        g.add(Triple.create(ex("a"), RDFS.Nodes.subClassOf, ex("b")));
+        Txn.executeWrite(live, () -> live.addGraph(onto, g));
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        Txn.executeWrite(live, () -> live.removeGraph(onto));
+        assertFalse(ask(live, "ASK { :x a :b }"));
+    }
+
+    @Test
+    void droppingTheRecordOrTheGraphRemovesTheClasses() {
+        update(live, record("onto", "true"));
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } . :x a :a }");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, dropRecord("onto"));
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        assertTrue(live.listedGraphs().isEmpty());
+        update(live, record("onto", "true"));
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, "DROP SILENT GRAPH :onto");
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        // A whole-registry drop and a graph replacement in one request, as core's graph_replace sends it.
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } }");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, "DROP GRAPH " + REG);
+        assertFalse(ask(live, "ASK { :x a :b }"));
+    }
+
+    @Test
+    void aGraphReplacementInOneRequest() {
+        update(live, record("onto", "true"));
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } . :x a :a }");
+        assertTrue(ask(live, "ASK { :x a :b }"));
+        update(live, RECORD_PREFIXES + """
+            DROP SILENT GRAPH :onto ;
+            INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :c } } ;
+            DELETE WHERE { GRAPH <https://linked.cm/pkg/core/graph/registry> { :onto core:contentHash ?h } } ;
+            INSERT DATA { GRAPH <https://linked.cm/pkg/core/graph/registry> { :onto core:contentHash "2" } }
+            """);
+        assertFalse(ask(live, "ASK { :x a :b }"));
+        assertTrue(ask(live, "ASK { :x a :c }"));
+    }
+
+    @Test
+    void writeOnlyCommitsOnListedGraphsNeverRebuild() {
+        update(live, record("onto", "true"));
+        update(live, "INSERT DATA { :x a :C1 }");
+        ask(live, "ASK { ?s ?p ?o }");
+        long rebuilds = live.rebuilds();
+        for ( int i = 1; i <= 200; i++ )
+            update(live, "INSERT DATA { GRAPH :onto { :C" + i + " rdfs:subClassOf :C" + (i + 1) + " } }");
+        for ( int i = 1; i <= 20; i++ )
+            update(live, record("g" + i, "true"));
+        assertEquals(rebuilds, live.rebuilds(), "no rebuild while only writes run");
+        assertTrue(ask(live, "ASK { :x a :C201 }"));
+        assertEquals(rebuilds + 1, live.rebuilds(), "exactly one rebuild for the burst");
+        assertEquals(21, live.listedGraphs().size());
+    }
+
+    @Test
+    void aWriteIntoANewlyListedGraphBeforeAnyRebuildIsSeen() {
+        update(live, "INSERT DATA { :x a :a }");
+        ask(live, "ASK { ?s ?p ?o }");
+        update(live, record("onto", "true"));
+        // Write-only: the set from the last build does not list :onto yet.
+        update(live, "INSERT DATA { GRAPH :onto { :a rdfs:subClassOf :b } }");
+        Txn.executeWrite(live, () -> live.getGraph(ex("onto")).add(Triple.create(ex("b"), RDFS.Nodes.subClassOf, ex("c"))));
+        assertTrue(ask(live, "ASK { :x a :c }"));
+        // Once a build listed it, the set is current and unlisted graphs no longer mark.
+        long gen = live.generation();
+        update(live, "INSERT DATA { GRAPH :other { :c rdfs:subClassOf :d } }");
+        assertEquals(gen, live.generation());
+    }
+
+    @Test
+    void aConcurrentReaderDoesNotHideAWriteIntoANewlyListedGraph() throws Exception {
+        update(live, "INSERT DATA { :x a :a }");
+        ask(live, "ASK { ?s ?p ?o }");
+        update(live, record("onto", "true"));
+        // A reader that began after the record and before the next write builds the set with :onto
+        // from its snapshot, while the writer's commit lands after that snapshot.
+        CountDownLatch begun = new CountDownLatch(1);
+        CountDownLatch written = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread reader = new Thread(() -> {
+            try {
+                live.begin(TxnType.READ);
+                try {
+                    begun.countDown();
+                    written.await(10, TimeUnit.SECONDS);
+                    askInTxn(live, "ASK { :x a :b }");   // builds and publishes the set
+                } finally {
+                    live.end();
+                }
+            } catch (Throwable ex) {
+                failure.set(ex);
+            }
+        });
+        reader.start();
+        begun.await(10, TimeUnit.SECONDS);
+        live.begin(ReadWrite.WRITE);
+        live.add(ex("onto"), ex("a"), RDFS.Nodes.subClassOf, ex("b"));
+        written.countDown();
+        reader.join(20_000);   // the reader publishes before this commit
+        live.commit();
+        live.end();
+        if ( failure.get() != null )
+            throw new AssertionError(failure.get());
+        assertTrue(ask(live, "ASK { :x a :b }"));
+    }
+
     @Test
     void addCopyMoveReadTheSourceThroughTheView() {
         update(live, "INSERT DATA { :a rdfs:subClassOf :b . GRAPH :h { :y a :a } }");
