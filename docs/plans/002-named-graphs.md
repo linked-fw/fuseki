@@ -7,7 +7,7 @@ summary: >
   writes on the default or a listed graph, graph-level writes); image `6.2.0-2`. F2:
   `FusekiStore` turns on `isolateLinkedTypeChecks` and maps the portable default and union graph
   names to Jena's. Supersedes sub-plan 001's graph text.
-status: Implementation
+status: Implementation (F1 done, F2 todo)
 packages: [fuseki]
 ---
 
@@ -283,5 +283,22 @@ Plan 071 §F2, verbatim:
 
 | Step | Status | Notes |
 |---|---|---|
-| F1 | in progress | |
+| F1 | done | report 002 |
 | F2 | todo | after K2 |
+
+## Outcome (F1)
+
+Record: [report 002](../reports/002-named-graphs-hierarchy-from-the-registry.md) (what was built,
+gates with timings, the bench with 20 listed graphs, the review).
+
+- **Changed:** `Hierarchy`, `SubClassOfTracker`, `TrackingGraph`, `DatasetGraphRDFSLive`; JUnit
+  (63 tests), smoke (24 checks), bench variant `bench-listed`; `IMAGE_TAG`/pom `6.2.0-2`; README;
+  plan 001 note. No npm change, no changeset.
+- **Verification:** `mvn -B -f server verify` 63 tests BUILD SUCCESS (19.8 s); `docker build -t
+  linked-fuseki:071 server`; `smoke.sh` 24 ok (4.6 s); `npx linked build && npm test` 12 tests
+  (6.1 s); bench: rebuild with 20 listed graphs 43 ms and 6 ms, open build 102 ms, counts identical
+  to the default-graph hierarchy.
+- **Review:** "Verdict: No open medium or high findings."; two lows and two nits fixed.
+- **Deviations:** every graph handle wrapped; the stale rule; default/union graph names in records
+  ignored (report 002 §Deviations). Contracts unchanged.
+- **Follow-ups:** F2; image publish at R1.
