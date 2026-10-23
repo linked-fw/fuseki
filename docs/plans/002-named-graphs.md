@@ -7,7 +7,7 @@ summary: >
   writes on the default or a listed graph, graph-level writes); image `6.2.0-2`. F2:
   `FusekiStore` turns on `isolateLinkedTypeChecks` and maps the portable default and union graph
   names to Jena's. Supersedes sub-plan 001's graph text.
-status: Implementation (F1 done, F2 in progress)
+status: Implementation (F1 done, F2 done)
 packages: [fuseki]
 ---
 
@@ -334,7 +334,7 @@ runs the live file on `linked-fuseki:071`.
 | Step | Status | Notes |
 |---|---|---|
 | F1 | done | report 002 |
-| F2 | in progress | report 003 |
+| F2 | done | report 003 |
 
 ## Outcome (F1)
 
@@ -352,3 +352,17 @@ gates with timings, the bench with 20 listed graphs, the review).
 - **Deviations:** every graph handle wrapped; the stale rule; default/union graph names in records
   ignored (report 002 §Deviations). Contracts unchanged.
 - **Follow-ups:** F2; image publish at R1.
+
+## Outcome (F2)
+
+Record: [report 003](../reports/003-fuseki-store-reads-from-graphs.md).
+
+- **Changed:** `FusekiStore` (`isolateLinkedTypeChecks: true`, `mapGraphName: jenaGraphName`,
+  `graphRegistryKey()` = `{baseUrl}/{dataset}`); unit tests (10) and a live test (5); README
+  §Reads from graphs; minor changeset with breaking changes.
+- **Verification:** `mvn -B -f server verify` 63 tests BUILD SUCCESS (17.5 s); image build gives
+  `linked-fuseki:071`'s id; smoke 24 ok (7 s); `npx linked build && npm test` with the live env 26
+  tests (10.6 s).
+- **Deviations:** `jenaGraphName` keeps other IRIs (core's test store returns `null`); the live
+  test also covers `graphs.allOntologies` and the shared key. Contracts unchanged.
+- **Follow-ups:** core range raised at R1; default/union in a set: core backlog 066.
