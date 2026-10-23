@@ -45,6 +45,41 @@ variables:
 Selects go to `/<ds>/sparql`, inserts and updates to `/<ds>/update`, graph reads and writes to
 `/<ds>/data`.
 
+### Reads from graphs
+
+`@_linked/core` reads named graphs with `.from(graph | graph[])` on selects, counts and asks, and
+writes whole graphs with its graph API (`OntologyGraph.create(...).withContent(...)`,
+`NamedGraph.replaceContent`, ...), which keeps each graph's record in the graph registry (see
+[The graph registry](#the-graph-registry)). `FusekiStore` sets up both for Jena:
+
+```ts
+import {graphs} from '@_linked/core/ontologies/graphs';
+import {OntologyGraph} from '@_linked/core/shapes/NamedGraph';
+
+await Person.select((p) => p.name).from(graphs.allOntologies).exec(store); // every registered ontology graph
+await Person.select((p) => p.name).from(OntologyGraph.iriFor('@_linked/schema')).exec(store); // one package graph
+await Person.select((p) => p.name).from(graphs.union).exec(store); // every named graph
+```
+
+- **Portable names:** `graphs.default` is read as Jena's `urn:x-arq:DefaultGraph` and
+  `graphs.union` as `urn:x-arq:UnionGraph` (every named graph, without the default graph);
+  `jenaGraphName` is the mapping. Either one works alone; together with other graphs core refuses
+  the read for now (`unsupported-query-kind`). `graphs.allOntologies` is expanded by core to the
+  graphs the registry lists.
+- **Writes** to a portable name, to the registry graph itself, or to any `urn:x-arq:` name are
+  refused (`graph-name-read-only`) before a request is sent.
+- **`isolateLinkedTypeChecks` is on:** for a subject reached through a link, its inferred type check
+  goes in a second `GRAPH ?g` block after a block that reads one of its stored triples, because Jena
+  reorders the patterns inside one block and would otherwise run the type check in every graph of
+  the set. It is a store setting, never per query.
+- **The registry cache** that expands `graphs.allOntologies` is kept per process under the dataset
+  endpoint (`{baseUrl}/{dataset}`): every `FusekiStore` for one dataset shares it, its own graph
+  writes update it, `store.invalidateGraphRegistry()` drops it, and an entry older than 30 seconds
+  is re-read.
+- **Image:** the hierarchy of a registered ontology graph is read only by
+  `ghcr.io/linked-fw/fuseki:6.2.0-2` or later; on `6.2.0-1` classes declared in package graphs do
+  not infer.
+
 The dataset helpers (`@_linked/fuseki/utils/datasets`, also exported from the package root):
 `datasetExists`, `createDataset` (`dbType: 'tdb2'` creates an inferring dataset on the image),
 `ensureDatasetExists`, `ensureDatasetsExist`, `clearDataset`, `clearDatasets`, and
