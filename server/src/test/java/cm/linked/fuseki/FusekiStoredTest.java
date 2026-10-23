@@ -202,6 +202,44 @@ class FusekiStoredTest {
         assertEquals(rebuilds + 1, live().rebuilds(), "one rebuild, at the next read");
     }
 
+    // ---- Graphs the registry lists.
+
+    static final String REGISTRY = "https://linked.cm/pkg/core/graph/registry";
+    static final String ONTO = "http://example.org/onto";
+    static final String RECORD = "<" + ONTO + "> <http://www.w3.org/ns/sparql-service-description#name> <" + ONTO + "> .\n"
+        + "<" + ONTO + "> <https://linked.cm/ont/core/feedsHierarchy> \"true\"^^<http://www.w3.org/2001/XMLSchema#boolean> .";
+
+    @Test
+    void gspOnAListedGraphRebuildsAtTheNextReadOnly() {
+        long rebuilds = settled();
+        assertEquals(2, gsp("PUT", "graph=" + enc(REGISTRY), RECORD) / 100);
+        assertEquals(2, gsp("PUT", "graph=" + enc(ONTO), AB) / 100);
+        assertEquals(2, gsp("POST", "graph=" + enc(ONTO), BC) / 100);
+        assertEquals(rebuilds, live().rebuilds(), "no rebuild inside a GSP write");
+        assertTrue(ask(base + "/sparql", "ASK { GRAPH :g { :x a :c } }"));
+        assertEquals(rebuilds + 1, live().rebuilds(), "one rebuild, at the next read");
+        assertEquals(1, live().listedGraphs().size());
+        // PUT replaces the listed graph: a < b only.
+        assertEquals(2, gsp("PUT", "graph=" + enc(ONTO), AB) / 100);
+        assertFalse(ask(base + "/sparql", "ASK { GRAPH :g { :w a :c } }"));
+        assertTrue(ask(base + "/sparql", "ASK { GRAPH :g { :x a :b } }"));
+        assertEquals(2, gsp("DELETE", "graph=" + enc(ONTO), null) / 100);
+        assertFalse(ask(base + "/sparql", "ASK { GRAPH :g { :x a :b } }"));
+    }
+
+    @Test
+    void aListedGraphFeedsAnUnlistedOneDoesNot() {
+        update(base + "/update", "INSERT DATA { :x a :a . GRAPH :draft { :a rdfs:subClassOf :c } }");
+        assertEquals(2, gsp("POST", "graph=" + enc(ONTO), AB) / 100);
+        assertFalse(ask(base + "/sparql", "ASK { :x a :b }"), "not listed yet");
+        assertEquals(2, gsp("POST", "graph=" + enc(REGISTRY), RECORD) / 100);
+        assertTrue(ask(base + "/sparql", "ASK { :x a :b }"), "listed by the record");
+        assertFalse(ask(base + "/sparql", "ASK { :x a :c }"), "the unlisted graph does not feed");
+        // Dropping the record by GSP DELETE of the whole registry graph.
+        assertEquals(2, gsp("DELETE", "graph=" + enc(REGISTRY), null) / 100);
+        assertFalse(ask(base + "/sparql", "ASK { :x a :b }"));
+    }
+
     @Test
     void quadsPostedToTheDatasetUrl() {
         update(base + "/update", "INSERT DATA { :x a :a }");

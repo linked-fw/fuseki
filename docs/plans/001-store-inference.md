@@ -13,6 +13,11 @@ packages: [fuseki]
 
 # 001 — Store inference: the RDFS module, the image and the stored endpoints
 
+> **Superseded graph text.** The hierarchy is no longer the default graph's alone: since image
+> `6.2.0-2` it is the default graph's plus every graph the graph registry lists
+> ([sub-plan 002](002-named-graphs.md)). This plan's statements that a `subClassOf` triple in a
+> named graph is not part of the hierarchy describe `6.2.0-1`.
+
 Sub-plan of CN plan 070,
 [`docs/plans/070-store-inference-and-ontology-data.md`](https://github.com/Semantu/create-now/blob/store-inference/docs/plans/070-store-inference-and-ontology-data.md)
 (locally `~/web/wt/070/docs/plans/070-store-inference-and-ontology-data.md`). Read its §Decisions

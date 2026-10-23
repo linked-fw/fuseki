@@ -38,8 +38,8 @@ variables:
 - `FUSEKI_DATASET` (required): the dataset name (e.g. `cn-main`).
 - `FUSEKI_DEFAULT_GRAPH` (optional): a graph IRI to target; unset, factories fall back to
   `process.env.DATA_ROOT`. On the image's inferring datasets, `rdfs:subClassOf` triples written
-  to a named graph are not part of the class hierarchy (only the default graph's are; see
-  [Datasets infer classes](#datasets-infer-classes)): write ontology data to the default graph.
+  to a named graph are part of the class hierarchy only when the graph registry lists that graph
+  (see [Datasets infer classes](#datasets-infer-classes)).
 - `FUSEKI_USER`, `FUSEKI_PASSWORD` (optional): basic auth.
 
 Selects go to `/<ds>/sparql`, inserts and updates to `/<ds>/update`, graph reads and writes to
@@ -52,7 +52,7 @@ The dataset helpers (`@_linked/fuseki/utils/datasets`, also exported from the pa
 
 ## The image
 
-`ghcr.io/linked-fw/fuseki:6.2.0-1` (tags `<jena version>-<n>`, immutable) is
+`ghcr.io/linked-fw/fuseki:6.2.0-2` (tags `<jena version>-<n>`, immutable) is
 `secoresearch/fuseki:6.2.0` plus:
 
 - the module `linked-fuseki-module.jar` in `/javalibs/` (the image's classpath directory):
@@ -67,13 +67,13 @@ Everything else is the base image's: the entrypoint and its environment (`ADMIN_
 `FUSEKI_BASE=/fuseki-base`, uid 9008 (group 0), port 3030.
 
 ```bash
-docker run -d --name fuseki -p 3030:3030 -e ADMIN_PASSWORD=secret ghcr.io/linked-fw/fuseki:6.2.0-1
+docker run -d --name fuseki -p 3030:3030 -e ADMIN_PASSWORD=secret ghcr.io/linked-fw/fuseki:6.2.0-2
 ```
 
 ```yaml
 services:
   fuseki:
-    image: ghcr.io/linked-fw/fuseki:6.2.0-1
+    image: ghcr.io/linked-fw/fuseki:6.2.0-2
     ports: ["3030:3030"]
     environment:
       ADMIN_PASSWORD: ${FUSEKI_ADMIN_PASSWORD}
@@ -90,16 +90,19 @@ infers RDFS classes: with `ex:A rdfs:subClassOf ex:B` stored, every `ex:A` insta
 `ex:B` instance to every query. `dbType=mem` datasets (`config-mem`) do not infer.
 
 - **Classes only.** The hierarchy is the transitive closure of the stored `rdfs:subClassOf`
-  triples of the **default graph**. `rdfs:subPropertyOf`, `rdfs:domain` and `rdfs:range` infer
-  nothing, even when the dataset holds them. A `subClassOf` triple in a named graph is not part of
-  the hierarchy.
+  triples of the **default graph** and of **every graph the graph registry lists** (see
+  [The graph registry](#the-graph-registry)). `rdfs:subPropertyOf`, `rdfs:domain` and
+  `rdfs:range` infer nothing, even when the dataset holds them. A `subClassOf` triple in any other
+  named graph (a draft, an import) is not part of the hierarchy.
 - **Every graph** is inferred: the default graph, each named graph and the union graph. Inferred
   triples stay in the graph whose data caused them.
 - **Nothing is materialized.** Jena's query-time RDFS view (`org.apache.jena.rdfs`) answers
   inferred triples while it reads; TDB2 holds only what was written, and its transactions are
   unchanged. A delete of an inferred triple is a no-op (the store does not hold it).
-- **The hierarchy follows the data, lazily.** A commit that writes or deletes a default-graph
-  `rdfs:subClassOf` triple only marks the hierarchy stale. The first transaction that reads
+- **The hierarchy follows the data, lazily.** A commit that may change it only marks the
+  hierarchy stale: any write to the registry graph; a write or delete of an `rdfs:subClassOf`
+  triple (or a wildcard delete, a clear, a graph added or dropped) on the default graph or on a
+  listed graph. The first transaction that reads
   afterwards rebuilds it once (readers starting meanwhile wait); write-only transactions,
   Graph Store Protocol `POST`, `PUT` and `DELETE` on `/<ds>/data` included, never
   rebuild, so a burst of hundreds of ontology commits costs one rebuild (~20 ms for 800 classes,
@@ -121,7 +124,8 @@ infers RDFS classes: with `ex:A rdfs:subClassOf ex:B` stored, every `ex:A` insta
   TDB2 location, or a tool writing to the database files while the server runs, changes the data
   but not the hierarchy until the next hierarchy change through the dataset or a restart.
 - Opening a dataset (server start) builds its hierarchy once; the log says
-  `[linked-fuseki] <location>: hierarchy built (<n> subClassOf, <ms> ms)`, and each rebuild
+  `[linked-fuseki] <location>: hierarchy built (<n> subClassOf, <k> graphs, <ms> ms)` (`<k>`:
+  the listed graphs, the default graph not counted), and each rebuild
   `hierarchy rebuilt (…, generation <g>)`.
 
 A static dataset declares the type in its assembler:
@@ -179,7 +183,39 @@ copy made from them would store the inference.
 The default graph is the stored default graph: no dataset sets `tdb2:unionDefaultGraph` (the RDFS
 view does not see it, and where it applies it hides the stored default graph from reads while
 writes still land there). Named graphs persist in TDB2 and are inferred like the default graph;
-the union graph is `<urn:x-arq:UnionGraph>`.
+the union graph is `<urn:x-arq:UnionGraph>` (it does not include the default graph; never write
+to it).
+
+### The graph registry
+
+Every dataset may hold a registry of its named graphs, the graph
+`<https://linked.cm/pkg/core/graph/registry>` (the same IRI in every dataset), described with
+SPARQL Service Description plus `@_linked/core`'s terms. `@_linked/core` writes it (each package's
+ontology graph `{package IRI}/graph/ontology` and its record in one update); the module only reads
+it. A record lists its graph as a **hierarchy source** with `core:feedsHierarchy true`:
+
+```turtle
+# in GRAPH <https://linked.cm/pkg/core/graph/registry>
+<https://linked.cm/pkg/schema/graph/ontology> a core:OntologyGraph ;
+  sd:name <https://linked.cm/pkg/schema/graph/ontology> ;
+  core:package "@_linked/schema" ; core:version "1.7.0" ;
+  core:contentHash "3f9c…" ; core:feedsHierarchy true ;
+  dcterms:modified "2026-10-30T10:12:00Z"^^xsd:dateTime ;
+  dcterms:source "data/schema.ttl", "data/schema-added.ttl" .
+```
+
+(`core:` is `https://linked.cm/ont/core/`, `sd:` `http://www.w3.org/ns/sparql-service-description#`.)
+
+- The hierarchy is built from the default graph plus every graph `?g` with `?r
+  core:feedsHierarchy true ; sd:name ?g` in the registry, read as stored (no inference; the flag
+  is an `xsd:boolean`, so `"true"` as a plain string does not count). Drafts and imports are
+  recorded with `false` and never feed it.
+- A graph written before its record feeds once the record is written. Dropping the record (or the
+  graph) removes its classes at the next read.
+- The IRIs are fixed in the module: no dataset configuration names them, and datasets created for
+  `6.2.0-1` need no change.
+- On `6.2.0-1` the hierarchy is the default graph's only: a `@_linked/core` that moves the
+  hierarchy into package graphs needs `6.2.0-2` or later.
 
 ## Backups and deletion
 

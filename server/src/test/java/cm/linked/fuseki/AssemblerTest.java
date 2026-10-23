@@ -78,6 +78,29 @@ class AssemblerTest {
     }
 
     @Test
+    void aListedGraphFeedsAfterReopening(@TempDir Path dir) {
+        DatasetGraph dsg = assemble(live(dir), "ds");
+        update(dsg, """
+            INSERT DATA {
+              GRAPH <https://linked.cm/pkg/core/graph/registry> {
+                :onto <http://www.w3.org/ns/sparql-service-description#name> :onto ;
+                      <https://linked.cm/ont/core/feedsHierarchy> true .
+              }
+              GRAPH :onto { :a rdfs:subClassOf :b }
+              :x a :a .
+            }""");
+        assertTrue(ask(dsg, "ASK { :x a :b }"));
+        DatasetGraph stored = ((DatasetGraphRDFSLive) dsg).stored();
+        dsg.close();
+        TDBInternal.expel(stored);
+
+        DatasetGraphRDFSLive again = (DatasetGraphRDFSLive) assemble(live(dir), "ds");
+        assertEquals(1, again.listedGraphs().size(), "the open build lists the graph");
+        assertTrue(ask(again, "ASK { :x a :b }"), "and infers with it");
+        again.close();
+    }
+
+    @Test
     void missingBaseDataset() {
         assertThrows(AssemblerException.class, () -> assemble(":ds a lf:DatasetRDFSLive .", "ds"));
     }
