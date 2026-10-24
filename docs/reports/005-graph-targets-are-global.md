@@ -48,6 +48,14 @@ Worktree `gglobal`, core resolved from the main checkout (2.42.0, pulled and bui
 
 None.
 
+### Review
+
+An independent read-only review found no high or medium finding. Low, applied: the changeset says
+a value left in a store config is ignored, not checked (core's `loadStores` warns about it); report
+004's follow-up is noted as moot below.
+
 ### Follow-ups
 
-None in this repo.
+- None in this repo. Report 004's follow-up (`loadStores` naming the alias of a bad
+  `config.ontologyGraph`) is moot: core no longer checks a store's graph targets (core backlog 074
+  keeps only the general constructor-error case).
