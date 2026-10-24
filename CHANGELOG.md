@@ -1,5 +1,11 @@
 # @\_linked/fuseki
 
+## 3.8.0
+
+### Minor Changes
+
+- [#77](https://github.com/linked-fw/fuseki/pull/77) [`61a63b6`](https://github.com/linked-fw/fuseki/commit/61a63b6afdb881b9618b47397b35e3c4a544385f) Thanks [@flyon](https://github.com/flyon)! - `FusekiStore`'s config takes `ontologyGraph` and `shapeGraph` (`'package'`, `'default'` or the absolute IRI of one shared graph) and hands them to core, which checks them when the store is built. A value in the store config wins over the environment (`LINKED_ONTOLOGY_GRAPH`, `LINKED_SHAPE_GRAPH`, as filled by `@_linked/server` or `loadStores`), and both default to `'package'`. Requires `@_linked/core` 2.41.0.
+
 ## 3.7.0
 
 ### Minor Changes
