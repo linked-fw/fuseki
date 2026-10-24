@@ -45,6 +45,40 @@ variables:
 Selects go to `/<ds>/sparql`, inserts and updates to `/<ds>/update`, graph reads and writes to
 `/<ds>/data`.
 
+### Store config
+
+`new FusekiStore(config)` takes one object, the `config` of a `linked.backend.datasets.json`
+entry:
+
+```json
+{
+  "datasets": {
+    "main": {
+      "store": "@_linked/fuseki/shapes/FusekiStore",
+      "config": {
+        "endpoint": "http://localhost:3030/myapp-main",
+        "ontologyGraph": "package",
+        "shapeGraph": "https://example.org/graphs/shapes"
+      }
+    }
+  }
+}
+```
+
+- `endpoint` (required): the dataset URL.
+- `credentials` (optional): `{username, password}`; unset, `FUSEKI_USER` / `FUSEKI_PASSWORD`.
+- `defaultGraph` (optional): unset, `FUSEKI_DEFAULT_GRAPH`.
+- `ontologyGraph`, `shapeGraph` (optional): where `@_linked/core`'s ontology and shape syncs
+  write and where `graphs.allOntologies` / `graphs.allShapes` read. Each is `'package'` (one graph
+  per package), `'default'` (the default graph) or the absolute IRI of one shared graph; see
+  "Ontology and shape graphs" in core's README. Core checks them when the store is built: an
+  invalid value, or one shared graph for both, throws.
+
+The graph settings are taken in this order: the value in the store config, then the environment
+(`LINKED_ONTOLOGY_GRAPH`, `LINKED_SHAPE_GRAPH`, which `@_linked/server` and `loadStores(config,
+{graphTargets})` fill into every setting the config leaves unset), then `'package'`. The store
+itself never reads those two variables.
+
 ### Reads from graphs
 
 `@_linked/core` reads named graphs with `.from(graph | graph[])` on selects, counts and asks, and

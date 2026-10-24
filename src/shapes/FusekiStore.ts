@@ -1,5 +1,6 @@
 import { SparqlDataset } from '@_linked/core/sparql/SparqlDataset';
 import { graphs } from '@_linked/core/ontologies/graphs';
+import type { GraphTarget } from '@_linked/core/utils/graphTargets';
 import type { SparqlJsonResults } from '@_linked/core/sparql/resultMapping';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -35,6 +36,16 @@ export interface FusekiStoreConfig {
   };
   /** Optional default graph IRI. Falls back to FUSEKI_DEFAULT_GRAPH env var when absent. */
   defaultGraph?: string;
+  /**
+   * Where core's ontology sync writes the registered packages' ontology data, and where
+   * `graphs.allOntologies` reads: `'package'` (one graph per package), `'default'` (the default
+   * graph) or the absolute IRI of one shared graph. Checked by core when the store is built (an
+   * invalid value throws). Unset, the host fills it from `LINKED_ONTOLOGY_GRAPH`, else
+   * `'package'`; a value set here wins over the environment.
+   */
+  ontologyGraph?: GraphTarget;
+  /** The same for core's shape sync and `graphs.allShapes` (env `LINKED_SHAPE_GRAPH`). */
+  shapeGraph?: GraphTarget;
 }
 
 /**
@@ -90,23 +101,41 @@ export class FusekiStore extends SparqlDataset {
     // Jena reorders the patterns inside one GRAPH block, so a linked subject's inferred type
     // check goes in a second block on the same graph variable (see core's `graphScope.ts`).
     // Store-level by design: never set per query.
-    super({ isolateLinkedTypeChecks: true, mapGraphName: jenaGraphName });
-    if (!config || typeof config === 'string' || !config.endpoint) {
+    // The graph targets go to core, which checks them (`parseGraphTargetOptions`) and keeps them
+    // as the store's own: a host filling unset ones from the environment
+    // (`setGraphTargets(..., {onlyUnset: true})`) does not override them.
+    const valid = FusekiStore.isConfig(config) ? config : undefined;
+    super({
+      isolateLinkedTypeChecks: true,
+      mapGraphName: jenaGraphName,
+      ontologyGraph: valid?.ontologyGraph,
+      shapeGraph: valid?.shapeGraph,
+    });
+    if (!valid) {
       throw new Error(
         'FusekiStore: pass a FusekiStoreConfig object with at least { endpoint: "http://host:port/dataset" }.',
       );
     }
-    const url = new URL(config.endpoint);
+    const url = new URL(valid.endpoint);
     this.baseUrl = `${url.protocol}//${url.host}`;
     this.dataset = FusekiStore.normalizeDatasetName(url.pathname);
     this.defaultGraph =
-      config.defaultGraph ?? process.env.FUSEKI_DEFAULT_GRAPH;
-    if (config.credentials) {
+      valid.defaultGraph ?? process.env.FUSEKI_DEFAULT_GRAPH;
+    if (valid.credentials) {
       this.credentials = {
-        username: config.credentials.username,
-        password: config.credentials.password,
+        username: valid.credentials.username,
+        password: valid.credentials.password,
       };
     }
+  }
+
+  private static isConfig(config: unknown): config is FusekiStoreConfig {
+    return (
+      !!config &&
+      typeof config === 'object' &&
+      typeof (config as FusekiStoreConfig).endpoint === 'string' &&
+      (config as FusekiStoreConfig).endpoint !== ''
+    );
   }
 
   /**
