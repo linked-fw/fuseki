@@ -1,5 +1,11 @@
 # @\_linked/fuseki
 
+## 3.9.1
+
+### Patch Changes
+
+- [#81](https://github.com/linked-fw/fuseki/pull/81) [`a76be96`](https://github.com/linked-fw/fuseki/commit/a76be9629bbb3dbc8fec4c64e5b3fedd0030ff3a) Thanks [@flyon](https://github.com/flyon)! - License: MIT (data under its original license)
+
 ## 3.9.0
 
 ### Minor Changes
