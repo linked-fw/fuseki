@@ -12,7 +12,9 @@
   },
   "version": "3.9.1",
   "packageManager": "npm@12.2.0",
-  "linkedPackage": true,
+  "linked": {
+    "kind": "library"
+  },
   "type": "module",
   "main": "lib/esm/index.js",
   "types": "index.d.ts",
