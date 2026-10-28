@@ -1,5 +1,11 @@
 # @\_linked/fuseki
 
+## 3.9.2
+
+### Patch Changes
+
+- [#90](https://github.com/linked-fw/fuseki/pull/90) [`78125ce`](https://github.com/linked-fw/fuseki/commit/78125ce3fe474df6c8dc5daef81d4d1b2f981f6a) Thanks [@flyon](https://github.com/flyon)! - `package.json` says what this package is in `"linked": {"kind": "library"}` instead of `"linkedPackage": true`, which the CLI and server no longer read.
+
 ## 3.9.1
 
 ### Patch Changes
