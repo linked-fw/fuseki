@@ -3,10 +3,17 @@ summary: >
   When the module enforces connection rights, it must enforce the shapeless delete's rule too: a
   delete of whole nodes in every graph (core's `Shape.delete(ids)`) needs the connection's
   `access:shapelessDelete` flag and `write` on every shape. Today only Create Now's gateway checks it.
-status: Open
+status: Deferred
 ---
 
 # 006 — Enforce the shapeless delete's rule in the store
+
+## Status
+
+Deferred (owner, 2026-11-01): out of scope for now. It depends on the module enforcing connection
+rights at all, which it does not yet; until then every app reaches the store through Create Now's
+gateway, which checks this rule. Pick it up together with connection-rights enforcement in the
+module, for apps that talk to the store directly.
 
 ## Context
 
