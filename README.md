@@ -35,7 +35,7 @@ variables:
 
 - `FUSEKI_BASE_URL` (required): e.g. `http://localhost:3030`, or `http://fuseki:3030` in Docker.
   Trailing slashes are trimmed.
-- `FUSEKI_DATASET` (required): the dataset name (e.g. `cn-main`).
+- `FUSEKI_DATASET` (required): the dataset name (e.g. `my-app`).
 - `FUSEKI_DEFAULT_GRAPH` (optional): a graph IRI to target; unset, factories fall back to
   `process.env.DATA_ROOT`. On the image's inferring datasets, `rdfs:subClassOf` triples written
   to a named graph are part of the class hierarchy only when the graph registry lists that graph
@@ -206,7 +206,7 @@ Every inferring dataset has `/<ds>/stored`, one endpoint over the stored triples
 
 ```ts
 import { storedEndpoint } from '@_linked/fuseki';
-storedEndpoint('http://localhost:3030', 'cn-main'); // http://localhost:3030/cn-main/stored
+storedEndpoint('http://localhost:3030', 'my-app'); // http://localhost:3030/my-app/stored
 ```
 
 Use it for whatever must not see inferred triples: **backups, dataset copies (forks), quad

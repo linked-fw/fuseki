@@ -1,6 +1,6 @@
 ---
 summary: >
-  Fuseki's sub-plan for CN plan 071 (named graphs): steps F1 and F2. F1: `lf:DatasetRDFSLive`
+  Fuseki's sub-plan for the named-graphs master plan: steps F1 and F2. F1: `lf:DatasetRDFSLive`
   builds its class hierarchy from the default graph plus every graph the graph registry
   (`https://linked.cm/pkg/core/graph/registry`) marks with `core:feedsHierarchy true`, and marks
   the hierarchy stale on every write that can change that set (registry writes, `subClassOf`
@@ -13,11 +13,9 @@ packages: [fuseki]
 
 # 002 — Named graphs: the hierarchy from the graph registry, `FusekiStore` graph names
 
-Sub-plan of CN plan 071,
-[`docs/plans/071-named-graphs-and-graph-routing.md`](https://github.com/Semantu/create-now/blob/named-graphs/docs/plans/071-named-graphs-and-graph-routing.md)
-(locally `~/web/create_now/docs/plans/071-named-graphs-and-graph-routing.md`). Its §Decisions
-(1-4 and 10 are F1's and F2's design), §Plan choices, §How to use, §Rules and §Contracts come
-first; this file adds the plan-mode detail for the fuseki steps. F1 is **sensitive**: an
+Sub-plan of the named-graphs master plan (plan 071). Its decisions 1-4 and 10 are F1's and F2's
+design, and its contracts are copied below; this file adds the plan-mode detail for the fuseki
+steps. F1 is **sensitive**: an
 independent read-only review of the diff runs before it lands. Records: report 002 (F1),
 report 003 (F2). Follow-ups: fuseki backlog from 002.
 
@@ -31,8 +29,8 @@ default graph's plus every graph the registry marks.
 ### Graph IRIs and vocabulary (provider K1; consumers F1, K3, V1, C1, C2, B1, K5)
 
 - Package graph: `{package IRI}/graph/{kind}`; `kind` ∈ `ontology` (phase 1), `shapes` (phase 2).
-  Package IRI per arch-02: `https://linked.cm/pkg/{publicSlug}` or
-  `https://{ws}.id.create.now/pkg/{slug}`. `OntologyGraph.iriFor(packageName)` and
+  Package IRI: `https://linked.cm/pkg/{publicSlug}` or
+  `https://{ws}.id.example.org/pkg/{slug}`. `OntologyGraph.iriFor(packageName)` and
   `ShapesGraph.iriFor(packageName)` build them from the registered package.
 - Dataset-owned graph: `{DATA_ROOT}/graph/{kind}`: `drafts`, `shapes`, `import/{slug}`.
 - Registry: `https://linked.cm/pkg/core/graph/registry` (= `graphs.registry`).
@@ -99,12 +97,12 @@ default graph's plus every graph the registry marks.
     dataset the process reads;
   - **own writes:** a process that changes a graph (any `graphQuery` through its store) updates its
     own cache for that dataset in the same step, so its next read sees the change;
-  - **CN-managed apps:** every graph write of an app under CN passes through CN's gateway, so CN
-    pushes an invalidation for that dataset to the app over its control channel after the write
-    (arch-07 §Host Agent ↔ app control: the app's `/admin/*` routes with `CN_APP_ADMIN_SECRET`).
+  - **host-managed apps:** every graph write of an app under a host passes through the host's
+    gateway, so the host pushes an invalidation for that dataset to the app over its control
+    channel after the write (the app's `/admin/*` routes, guarded by an admin secret).
     C1 sends it, V1 adds the route and drops the cache; core exposes the drop as a public call
     on the store (`invalidateGraphRegistry(dataset?)`, K2) for V1 to use;
-  - **backstop:** an entry older than 30 seconds is re-read, for writes that bypass CN (scripts,
+  - **backstop:** an entry older than 30 seconds is re-read, for writes that bypass the host (scripts,
     standalone apps, and an app in a Docker container, which has no control channel yet);
   - writes never depend on the cache.
 - Test (core, `[fuseki]`): the same queries with `isolateLinkedTypeChecks` on and off return
@@ -283,7 +281,7 @@ Plan 071 §F2, verbatim:
   graph alone is read without `GRAPH`); the identity for other IRIs keeps it right if K4 maps every
   name.
 - **`graphRegistryKey()`** returns `{baseUrl}/{dataset}` (the dataset endpoint without a trailing
-  slash, as core's test store does), so every `FusekiStore` (and CN's `AppDataFusekiStore`) for one
+  slash, as core's test store does), so every `FusekiStore` (and any subclass a host app uses) for one
   dataset shares one registry cache entry, and `invalidateGraphRegistry()` on any of them drops it.
 - **`isReservedGraphName`** is not overridden: core's default refuses `urn:x-arq:*` writes
   (`graph-name-read-only`) before any SPARQL is built; a unit test pins it for this store.

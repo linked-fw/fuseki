@@ -1,6 +1,6 @@
 ---
 summary: >
-  Fuseki's sub-plan for CN plan 070 (the store infers): step F1. A Java module in `server/`
+  Fuseki's sub-plan for a master plan (the store infers): step F1. A Java module in `server/`
   (dataset type `lf:DatasetRDFSLive`: Jena's query-time RDFS view over TDB2 whose class hierarchy
   is rebuilt lazily after commits that touch the stored `rdfs:subClassOf` triples; a stored-only
   `/<ds>/stored` endpoint; SERVICE off), the image `ghcr.io/linked-fw/fuseki:6.2.0-1` with the
@@ -18,18 +18,15 @@ packages: [fuseki]
 > ([sub-plan 002](002-named-graphs.md)). This plan's statements that a `subClassOf` triple in a
 > named graph is not part of the hierarchy describe `6.2.0-1`.
 
-Sub-plan of CN plan 070,
-[`docs/plans/070-store-inference-and-ontology-data.md`](https://github.com/Semantu/create-now/blob/store-inference/docs/plans/070-store-inference-and-ontology-data.md)
-(locally `~/web/wt/070/docs/plans/070-store-inference-and-ontology-data.md`). Read its §Decisions
-(2-9 are this step's design), §How to use, §Rules and §Contracts first. F1 is a **sensitive** step:
+Sub-plan of the store-inference master plan (its decisions 2-9 are this step's design; its
+contracts this repository provides are copied below). F1 is a **sensitive** step:
 an independent read-only review of the diff runs before it lands. Record: report 001
 (`docs/reports/001-store-inference.md`, new).
 
 ## Contracts
 
 This repository **provides** both contracts below; it consumes none. Copied verbatim from the
-master plan's §Contracts (the rest of the contracts:
-[master plan §Contracts](https://github.com/Semantu/create-now/blob/store-inference/docs/plans/070-store-inference-and-ontology-data.md#contracts)).
+master plan's §Contracts.
 
 <!-- verbatim:start -->
 
@@ -68,7 +65,7 @@ measurements; the master edits them here before C1 and K1's store phase start.
 - The module rewrites `$FUSEKI_BASE/templates/config-tdb2` at start when it is missing or
   different, with a warning (Fuseki copies its stock template only when the file is missing, so a
   persisted volume would otherwise create plain datasets silently).
-- `templates/config-tdb2` (baked in) declares the service with the endpoints CN uses today
+- `templates/config-tdb2` (baked in) declares the service with the endpoints its consumers use today
   (`""`/`sparql`/`query`, `""`/`update`, `""`/`data` GSP read-write, `upload`, `get`) over
   `lf:DatasetRDFSLive`, plus `stored` and `shacl` (store validation, decision 23). A form-created dataset (`POST $/datasets`,
   `dbName`, `dbType=tdb2`) gets it. **Only `dbType=tdb2` datasets infer**; `mem` (`config-mem`)
@@ -82,7 +79,7 @@ measurements; the master edits them here before C1 and K1's store phase start.
 - `DELETE $/datasets/<ds>` removes the TDB2 files of a dataset created through the admin API (its
   own `configuration/<ds>.ttl`) under `/fuseki-base/databases/` (a module filter finishes what
   Fuseki skips for a wrapped dataset); a re-created name starts empty. Datasets declared in a
-  shared configuration file (`ds`, cn-main, cn-ai, pg-test) are only unregistered and keep their
+  shared configuration file (`ds`, or one a consumer mounts) are only unregistered and keep their
   files, as on plain Fuseki.
 - `/<ds>/upload` is not served on Fuseki 6.2 (405, the stock image too: Fuseki 6's upload handler
   belongs to its UI module); load files through `/<ds>/data` (GSP) or N-Quads to `/<ds>`.
@@ -293,7 +290,7 @@ PREFIX lf:      <https://linked.cm/ont/fuseki#>
     ja:dataset <#tdb_dataset_readwrite> ;
     .
 
-# No tdb2:unionDefaultGraph: the default graph is the stored default graph (CN plan 070, decision 6).
+# No tdb2:unionDefaultGraph: the default graph is the stored default graph (master plan decision 6).
 <#tdb_dataset_readwrite> rdf:type tdb2:DatasetTDB2 ;
     tdb2:location "{FUSEKI_BASE}/databases/{NAME}" ;
     .
@@ -455,7 +452,7 @@ the image workflow, public visibility). Current state only.
 - **`ENABLE_*` edit `ds` only**, by `sed` on exact commented lines: keep those lines byte for byte
   in `server/configuration/assembler.ttl`, and keep it writable by uid 9008.
 - **A persisted `/fuseki-base` volume keeps an old template**: `TemplateGuard` replaces it with a
-  WARN; a consumer that mounts its own `configuration/` (CN does) replaces `ds`, which is expected.
+  WARN; a consumer that mounts its own `configuration/` replaces `ds`, which is expected.
 - **Run-area statics:** Fuseki's `FusekiServerCtl` paths are static; a test that starts a server
   with a run area (`-DFUSEKI_BASE=<temp>`, read by `Lib.getenv` before the environment) runs in its
   own fork.
@@ -467,11 +464,9 @@ the image workflow, public visibility). Current state only.
 
 ### Architecture
 
-- CN plan 070 §Decisions 2-9 (store, reasoner, classes only, template, `/stored`, graphs, Fuseki
-  6.2, the module's home, the benchmark) and §Contracts (above).
-- CN `docs/architecture/04-storage-model.md` §Dataset types, §Copy-on-write branch forks,
-  §Provisioning interfaces (C1 rewrites them against this step's results).
-- CN `docs/architecture/07-infrastructure-and-execution.md` (Fuseki as a shared service).
+- The master plan's decisions 2-9 (store, reasoner, classes only, template, `/stored`, graphs,
+  Fuseki 6.2, the module's home, the benchmark) and its §Contracts (above).
+- Fuseki runs as a shared service; datasets are copied for copy-on-write branch forks.
 - Jena's RDFS documentation (`https://jena.apache.org/documentation/rdfs/`) and Fuseki modules
   (`https://jena.apache.org/documentation/fuseki2/fuseki-modules.html`).
 

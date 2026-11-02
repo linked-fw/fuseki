@@ -2,7 +2,7 @@
 summary: >
   When the module enforces connection rights, it must enforce the shapeless delete's rule too: a
   delete of whole nodes in every graph (core's `Shape.delete(ids)`) needs the connection's
-  `access:shapelessDelete` flag and `write` on every shape. Today only Create Now's gateway checks it.
+  `access:shapelessDelete` flag and `write` on every shape. Today only a host app's gateway checks it.
 status: Deferred
 ---
 
@@ -11,7 +11,7 @@ status: Deferred
 ## Status
 
 Deferred (owner, 2026-11-01): out of scope for now. It depends on the module enforcing connection
-rights at all, which it does not yet; until then every app reaches the store through Create Now's
+rights at all, which it does not yet; until then every app reaches the store through its host's
 gateway, which checks this rule. Pick it up together with connection-rights enforcement in the
 module, for apps that talk to the store directly.
 
@@ -22,20 +22,20 @@ every triple of its subjects, and the links to them, in every graph of the datas
 graph included. It is one SPARQL update with a default-graph side and a `GRAPH ?g` side over every
 named graph (`deleteShapelessToSparql` in `@_linked/core/sparql`).
 
-Create Now gates it at its gateway (CN arch-07 §App queries at CN's gateway, arch-04 §Connection
-rights and enforcement), and needs both:
+A host app gates it at its gateway, where app queries pass and each connection's rights are
+enforced, and needs both:
 
 - the app's right: its connection carries `access:shapelessDelete` (`https://linked.cm/ont/access/shapelessDelete`,
   xsd:boolean, off by default);
 - the user's right: the level through the connection is at least `write` on every shape.
 
-The store is meant to check the same connection again (CN uploads each connection's rights to its
-rights file), so an app that reaches the store directly is held to the same rights. The module does
+The store is meant to check the same connection again (the host uploads each connection's rights to
+its rights file), so an app that reaches the store directly is held to the same rights. The module does
 not enforce connection rights yet, so it does not check this rule either.
 
 ## What to do
 
-- Carry the flag in the rights file entry CN writes per connection.
+- Carry the flag in the rights file entry the host writes per connection.
 - Recognise the shapeless delete's update shape (no type pattern ties its subjects to a class) and
   refuse it for a connection without the flag, or whose default level or any per-shape level is
   below `write`.
