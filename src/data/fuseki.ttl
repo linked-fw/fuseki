@@ -6,12 +6,15 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix schema: <http://schema.org/> .
+@prefix vann: <http://purl.org/vocab/vann/> .
 
 fuseki:
     a owl:Ontology ;
     dcterms:description "Terms of the Apache Jena Fuseki store package."@en ;
     dcterms:title "Linked Fuseki"@en ;
-    owl:versionInfo "3.6.0" .
+    owl:versionInfo "3.6.0" ;
+    vann:preferredNamespacePrefix "fuseki" ;
+    vann:preferredNamespaceUri "https://linked.cm/ont/fuseki/" .
 
 fuseki:FusekiStore
     a owl:Class ;
