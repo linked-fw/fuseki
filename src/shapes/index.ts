@@ -10,4 +10,4 @@
  * registers the ontology. Add a side-effect import here for any shape module
  * added to this folder.
  */
-import '../ontologies/fuseki.register.js';
+import '../ontologies/index.js';
