@@ -8,8 +8,8 @@ module.exports = {
       useESM: true,
       // Transpile only. Under ts-jest, `@_linked/core` resolves to its published types rather
       // than the workspace source, so `@linkedShape` cannot see that FusekiStore extends Shape
-      // and the decorator fails to typecheck — the same resolution friction CN's vitest config
-      // documents at length. These tests assert RUNTIME behaviour; types are checked by the
+      // and the decorator fails to typecheck — the same resolution friction a host app's vitest
+      // config can run into. These tests assert RUNTIME behaviour; types are checked by the
       // package's own `yarn build`, which is the right place for them.
       diagnostics: false,
       tsconfig: { ...require('./tsconfig.json').compilerOptions, module: 'esnext', target: 'es2022', moduleResolution: 'node' },

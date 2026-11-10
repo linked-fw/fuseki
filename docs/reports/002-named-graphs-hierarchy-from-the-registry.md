@@ -1,6 +1,6 @@
 ---
 summary: >
-  The Fuseki module of CN plan 071 (step F1): `lf:DatasetRDFSLive` builds its class hierarchy
+  The Fuseki module of the host app's named-graphs plan (step F1): `lf:DatasetRDFSLive` builds its class hierarchy
   from the default graph plus every graph the graph registry
   (`https://linked.cm/pkg/core/graph/registry`) lists with `core:feedsHierarchy true`, and marks
   it stale on registry writes and on `subClassOf` writes to the default or a listed graph (graph
@@ -12,7 +12,7 @@ packages: [fuseki]
 
 # 002 — Named graphs: the hierarchy from the graph registry
 
-Record of step F1 of CN plan 071 (sub-plan [002](../plans/002-named-graphs.md)). Integration
+Record of step F1 of the host app's named-graphs plan (sub-plan [002](../plans/002-named-graphs.md)). Integration
 branch `named-graphs`; worktree `~/web/wt/f1` (branch `named-graphs--f1`).
 
 ## What was built

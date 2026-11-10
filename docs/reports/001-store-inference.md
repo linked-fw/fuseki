@@ -1,6 +1,6 @@
 ---
 summary: >
-  The Fuseki module and image of CN plan 070 (step F1): `lf:DatasetRDFSLive` (Jena's query-time
+  The Fuseki module and image of the host app's store-inference plan (step F1): `lf:DatasetRDFSLive` (Jena's query-time
   RDFS view over TDB2, its class hierarchy rebuilt lazily from the stored default-graph
   `rdfs:subClassOf` triples at the first read after a commit that touched one), the
   `/<ds>/stored` endpoint, SERVICE off, the inferring `config-tdb2` template and `ds` dataset,
@@ -13,7 +13,7 @@ packages: [fuseki]
 
 # 001 — Store inference: the RDFS module, the image and the stored endpoints
 
-Source: sub-plan [001](../plans/001-store-inference.md), CN plan 070 step F1 (sensitive).
+Source: sub-plan [001](../plans/001-store-inference.md), the host app's master plan step F1 (sensitive).
 
 ## What was built
 
@@ -222,7 +222,7 @@ dataset builds the hierarchy in 81 ms (952 axioms); startup 5 s.
 
 ## Settled contract items and final contract text
 
-Every *pending F1* item and the measured additions. Text to replace or add in CN plan 070
+Every *pending F1* item and the measured additions. Text to replace or add in the master plan's
 §Contracts (§The image) and the copy in sub-plan 001:
 
 1. **Text index (was *pending F1*)** — M5, the `ds` dataset (M12a, smoke) and `AssemblerTest`:
@@ -258,7 +258,7 @@ Every *pending F1* item and the measured additions. Text to replace or add in CN
    > `DELETE $/datasets/<ds>` removes the TDB2 files of a dataset created through the admin API
    > (its own `configuration/<ds>.ttl`) under `/fuseki-base/databases/` (the module completes what
    > Fuseki skips for wrapped datasets); a re-created name starts empty. Datasets declared in a
-   > shared configuration file (`ds`, cn-main, cn-ai, pg-test) are only unregistered, as on plain
+   > shared configuration file (`ds`, the host app's own datasets, pg-test) are only unregistered, as on plain
    > Fuseki.
 5. **One stored endpoint** — M2: whole dataset 3 quads, `?default` 2, `?graph=` 1, `?query=`,
    `POST application/sparql-query` and form `query=` answer from stored triples only; GSP POST and
@@ -275,8 +275,8 @@ Every *pending F1* item and the measured additions. Text to replace or add in CN
 10. **New: `upload` does not exist on Fuseki 6.2.** `/<ds>/upload` answers 405 with "No Fuseki
     dispatch" on a form-created dataset of the stock `secoresearch/fuseki:6.2.0` as on the image:
     Fuseki 6's upload handler belongs to its UI module, which the server command does not load.
-    The template keeps the stock `fuseki:serviceUpload "upload"` line (harmless). CN code does not
-    call `/upload` (searched `src`, `scripts`, `packages`, `tests`); pg-test's assembler declares
+    The template keeps the stock `fuseki:serviceUpload "upload"` line (harmless). The host app's code does
+    not call `/upload`; pg-test's assembler declares
     it. Proposed addition to §The image: "`/<ds>/upload` is not served on Fuseki 6.2 (405); load
     files through `/<ds>/data` (GSP) or N-Quads to `/<ds>`." Consumer: C1.
 
@@ -365,12 +365,12 @@ the same plus `docker build` (1:45 cold) and `smoke.sh` (16 ok, 4 s).
 ## Follow-ups
 
 - **Publish the image** (`ghcr.io/linked-fw/fuseki:6.2.0-1`), set the GHCR package public once
-  and link it to the repository: CN plan 070 step R (owner), recorded in this README's
+  and link it to the repository: the master plan's step R (owner), recorded in this README's
   "Releasing the image".
 - **The two workflows run first on push of `store-inference`** (`server.yml`); `image.yml` only on
   `main`, so it is first exercised at R.
-- **pg-test's `fuseki:serviceUpload`**, and any consumer that relied on `/upload`: CN plan 070
-  step C1 (§Contracts item from this report).
+- **pg-test's `fuseki:serviceUpload`**, and any consumer that relied on `/upload`: the master
+  plan's step C1 (§Contracts item from this report).
 - **Contract text items 1, 2, 4, 6 and 10** handed to the master for §Contracts and sub-plan 001.
 
 ## Independent review
@@ -382,8 +382,8 @@ sub-plan 001, then each round of fixes.
   - High: a writer that waited for TDB2's writer lock read with the hierarchy from before the
     commit it waited for (reproduced). Fixed with the two counters (Deviations), plus a test that
     fails without the fix.
-  - High: the delete filter removed the files of unmanaged datasets (`ds`, and cn-main, cn-ai,
-    pg-test once in `assembler.ttl`). Fixed: managed datasets only, re-checked under the server
+  - High: the delete filter removed the files of unmanaged datasets (`ds`, the host app's own
+    datasets, and pg-test once in `assembler.ttl`). Fixed: managed datasets only, re-checked under the server
     lock; test `anUnmanagedDatasetKeepsItsFiles`.
   - Medium: `image.yml` could overwrite a published tag (an unauthenticated inspect failure read
     as "absent"). Fixed.
@@ -404,9 +404,9 @@ sub-plan 001, then each round of fixes.
   - Without `FUSEKI_BASE`, on the first start of a new `run/`, the template is not guarded (the
     image always sets `FUSEKI_BASE`).
 
-## Addendum: GSP writes keep the no-rebuild guarantee (CN plan 070, iteration 1)
+## Addendum: GSP writes keep the no-rebuild guarantee (master plan, iteration 1)
 
-CN plan 070's review found that a GSP `POST`/`PUT`/`DELETE` carrying `rdfs:subClassOf` resolved
+The master plan's review found that a GSP `POST`/`PUT`/`DELETE` carrying `rdfs:subClassOf` resolved
 the inferred view inside its write transaction (`getG()` handed out the view's graphs), so N such
 writes cost N rebuilds, against "write-only transactions never rebuild".
 
