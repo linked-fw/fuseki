@@ -1,6 +1,6 @@
 ---
 summary: >
-  `FusekiStore` for CN plan 071 (step F2): maps the portable `graphs.default`/`graphs.union` to
+  `FusekiStore` for the host app's named-graphs plan (step F2): maps the portable `graphs.default`/`graphs.union` to
   Jena's `urn:x-arq:DefaultGraph`/`urn:x-arq:UnionGraph` (`jenaGraphName`), turns on
   `isolateLinkedTypeChecks`, keys core's graph-registry cache by the dataset endpoint
   (`{baseUrl}/{dataset}`) and keeps core's `urn:x-arq:` write refusal. Unit tests, a live test on
@@ -11,7 +11,7 @@ packages: [fuseki]
 
 # 003 — `FusekiStore` reads from graphs
 
-Record of step F2 of CN plan 071 (sub-plan [002](../plans/002-named-graphs.md) §F2). Integration
+Record of step F2 of the host app's named-graphs plan (sub-plan [002](../plans/002-named-graphs.md) §F2). Integration
 branch `named-graphs`; worktree `~/web/wt/f2` (branch `named-graphs--f2`), built against core's
 integration build (K2 landed, core `9ce8b8f`, resolved from the main checkout; fuseki `overlay`).
 
@@ -22,7 +22,7 @@ integration build (K2 landed, core `9ce8b8f`, resolved from the main checkout; f
   field). `jenaGraphName` (exported): `graphs.default` → `urn:x-arq:DefaultGraph`, `graphs.union` →
   `urn:x-arq:UnionGraph`, any other IRI unchanged. `graphRegistryKey()` returns
   `{baseUrl}/{dataset}` (trailing slashes dropped), the same form as core's test store, so every
-  store for one dataset (CN's `AppDataFusekiStore` included) shares one cache entry.
+  store for one dataset (a host app's own subclass included) shares one cache entry.
   `isReservedGraphName` is not overridden (core's default refuses `urn:x-arq:*`).
 - **`FusekiStore.graphs.test.ts`** (unit, 10 tests): the mapping, the options, the key (shared per
   dataset, distinct per dataset and per host), and graph writes to `urn:x-arq:DefaultGraph`,

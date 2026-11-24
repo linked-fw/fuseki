@@ -10,7 +10,7 @@ status: Open
 
 # 001 — Store inference: review lows not yet fixed
 
-From the reviews recorded in [report 001](../reports/001-store-inference.md) (CN plan 070). None
+From the reviews recorded in [report 001](../reports/001-store-inference.md). None
 affects the image's HTTP endpoints as served today; each is a correctness edge for embedded
 callers, a test gap or supply-chain hardening.
 

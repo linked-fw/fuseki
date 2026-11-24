@@ -1,16 +1,9 @@
 import { createNameSpace } from '@_linked/core/utils/NameSpace';
-import { loadOntologyFiles } from '@_linked/core/ontology/loadOntologyFiles';
-
-/** The package's ontology data, relative to this module (Turtle, copied into `lib/` by the build). */
-export const dataFiles = ['../data/fuseki.ttl'];
-
-/** Reads the package's ontology data (server only). */
-export const loadData = () => loadOntologyFiles(import.meta.url, dataFiles);
 
 /**
  * The namespace of this ontology, which can be used to create NamedNodes with URI's not listed in this file.
  *
- * First-party ontologies live on linked.cm: `https://linked.cm/ont/{ontologySlug}/`, and a
+ * First-party ontologies live on linked.cm: `https://linked.cm/ont/{name}/`, and a
  * package's own ontology takes the package's publicSlug (`@_linked/fuseki` → `fuseki`), the same
  * slug its shapes use under `https://linked.cm/shape/fuseki/`.
  *

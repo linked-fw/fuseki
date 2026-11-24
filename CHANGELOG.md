@@ -143,7 +143,7 @@
   The declared range was wide enough that the resolved core depended on whatever the
   consumer — or this repo's own CI, via `package-lock.json` — happened to install. Core
   decides how a shape's IRI is minted, so a stale core made this package emit legacy
-  `data.lincd.org` IRIs instead of the arch-02 `linked.cm` scheme. Which IRIs a published
+  `data.lincd.org` IRIs instead of the public `linked.cm` scheme. Which IRIs a published
   package produces should not be a function of the installer's dependency tree.
 
   Minor rather than patch: this raises the minimum core a consumer must resolve, so it
@@ -238,7 +238,7 @@
   reported success.
 
   **Breaking:** callers that relied on a failed query resolving to an empty result set will now see
-  a rejection. That is the point — the old behaviour is why a Create Now existence check reported
+  a rejection. That is the point — the old behaviour is why a host app's existence check reported
   `false` unconditionally in a running backend, sending every re-save down the `create` branch
   instead of `update`, unnoticed.
 

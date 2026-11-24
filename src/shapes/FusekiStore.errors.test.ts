@@ -6,7 +6,7 @@
  * non-2xx. So a 404, a 500, an HTML error page and a malformed query were all indistinguishable
  * from "no rows" — and a write that never landed reported success.
  *
- * The cost was real: Create Now's existence check reported `false` unconditionally in a running
+ * The cost was real: a host app's existence check reported `false` unconditionally in a running
  * backend, so every re-save took the `create` branch instead of `update`. Two layers above this
  * were hardened against swallowing before anyone looked here, which is the argument for these
  * tests — the behaviour is invisible until something downstream is quietly wrong.

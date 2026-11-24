@@ -202,7 +202,7 @@ export class FusekiStore extends SparqlDataset {
     // rows". Every read through this store answered "nothing found" when the store was
     // broken, and no caller could tell.
     //
-    // That is not a hypothetical: Create Now's existence check reported `false`
+    // That is not a hypothetical: a host app's existence check reported `false`
     // unconditionally in a running backend, so every re-save took the create branch. Two
     // layers above this were hardened to stop swallowing before anyone looked here.
     if (!res.ok) {

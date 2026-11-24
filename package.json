@@ -61,7 +61,7 @@
     }
   },
   "dependencies": {
-    "@_linked/core": "^2.42.0"
+    "@_linked/core": "^3.0.0"
   },
   "devDependencies": {
     "@_linked/cli": "^1.54.0",
@@ -88,5 +88,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "linkedOntologies": {
+    "fuseki": {
+      "namespace": "https://linked.cm/ont/fuseki/",
+      "generated": false
+    }
   }
 }
