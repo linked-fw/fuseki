@@ -1,5 +1,17 @@
 # @\_linked/fuseki
 
+## 4.0.0
+
+### Major Changes
+
+- [#100](https://github.com/linked-fw/fuseki/pull/100) [`e4bc2a2`](https://github.com/linked-fw/fuseki/commit/e4bc2a283347c74af96b23cb88c37f3a92a4a3f1) Thanks [@flyon](https://github.com/flyon)! - The ontology is registered by `src/ontologies/index.ts` (core's `registerOntologies`), which the package entry imports; the package registers no prefix (an app's prefix map, `linked.app.json`, holds the prefixes; the ontology's data suggests one). `src/package.ts` exports `registerOntologies` instead of `linkedOntology`. Requires the `@_linked/core` major with `registerOntologies`. Removed: `ontologies/fuseki.register`, the `dataFiles` and `loadData` exports of `ontologies/fuseki`, and the deprecated `lincd-fuseki` prefix.
+
+### Patch Changes
+
+- [#100](https://github.com/linked-fw/fuseki/pull/100) [`df3b7ca`](https://github.com/linked-fw/fuseki/commit/df3b7ca0f3fceabf9eecefe4b13dbfa495704258) Thanks [@flyon](https://github.com/flyon)! - The first-party namespace rule in the ontology's comment reads `https://linked.cm/ont/{name}/`, `{name}` being the ontology's name.
+
+- [#100](https://github.com/linked-fw/fuseki/pull/100) [`d3d3637`](https://github.com/linked-fw/fuseki/commit/d3d3637948caefd83002b509ae171d562bd6bdfc) Thanks [@flyon](https://github.com/flyon)! - The ontology is declared in `package.json` `"linkedOntologies"` and its data states its suggested prefix and namespace (`vann:preferredNamespacePrefix`, `vann:preferredNamespaceUri`); the module stays hand-written (`"generated": false`). No import path or export changes.
+
 ## 3.9.2
 
 ### Patch Changes
