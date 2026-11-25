@@ -64,7 +64,7 @@
     "@_linked/core": "^3.0.0"
   },
   "devDependencies": {
-    "@_linked/cli": "^1.54.0",
+    "@_linked/cli": "^2.0.0",
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.0",
     "@jest/globals": "^30.0.0",
